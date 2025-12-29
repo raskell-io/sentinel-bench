@@ -1,6 +1,42 @@
-# sentinel-bench
+<div align="center">
 
-Benchmarking framework for comparing Sentinel against Envoy, HAProxy, and Nginx.
+<h1 align="center">
+  <img src=".github/static/bench-icon.png" alt="sentinel-bench icon" width="96" />
+  <br>
+  sentinel-bench
+</h1>
+
+<p align="center">
+  <em>Fair, reproducible benchmarking for reverse proxies.</em><br>
+  <em>Sentinel vs Envoy vs HAProxy vs Nginx.</em>
+</p>
+
+<p align="center">
+  <a href="https://mise.jdx.dev">
+    <img alt="mise" src="https://img.shields.io/badge/mise-task%20runner-4e9a06?style=for-the-badge">
+  </a>
+  <a href="https://www.docker.com">
+    <img alt="Docker" src="https://img.shields.io/badge/Docker-containers-2496ED?logo=docker&logoColor=white&style=for-the-badge">
+  </a>
+  <a href="LICENSE">
+    <img alt="License" src="https://img.shields.io/badge/License-MIT-c6a0f6?style=for-the-badge">
+  </a>
+</p>
+
+<p align="center">
+  <a href="docs/CONCEPT.md">Methodology</a> •
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#scenarios">Scenarios</a> •
+  <a href="https://github.com/raskell-io/sentinel">Sentinel</a>
+</p>
+
+<hr />
+
+</div>
+
+Benchmarking framework for comparing [Sentinel](https://github.com/raskell-io/sentinel) against Envoy, HAProxy, and Nginx with equivalent configurations and rigorous methodology.
+
+---
 
 ## Quick Start
 
@@ -45,6 +81,8 @@ mise run bench envoy passthrough --duration 120 --rate 50000
 mise run bench all passthrough
 ```
 
+---
+
 ## Tasks
 
 Run `mise tasks` to see all available tasks:
@@ -59,6 +97,8 @@ Run `mise tasks` to see all available tasks:
 | `mise run check-tools` | Show available load generators |
 | `mise run results` | List benchmark results |
 | `mise run clean` | Clean results directory |
+
+---
 
 ## Repository Structure
 
@@ -77,6 +117,8 @@ sentinel-bench/
 ├── docker/             # Docker Compose infrastructure
 └── results/            # Benchmark results (gitignored)
 ```
+
+---
 
 ## Scenarios
 
@@ -97,6 +139,8 @@ sentinel-bench/
 | `agent_pipeline` | External agent processing overhead |
 | `rate_limiting` | Token bucket accuracy under load |
 | `circuit_breaker` | Trip/recovery behavior |
+
+---
 
 ## Configuration
 
@@ -129,6 +173,8 @@ Install the recommended generator:
 mise run install-oha
 ```
 
+---
+
 ## Configuration Equivalence
 
 All proxies are configured with equivalent settings:
@@ -139,7 +185,9 @@ All proxies are configured with equivalent settings:
 - **Access logging disabled** (critical for fair comparison)
 - Same timeout values
 
-See `docs/CONCEPT.md` for detailed equivalence matrix.
+See [docs/CONCEPT.md](docs/CONCEPT.md) for detailed equivalence matrix.
+
+---
 
 ## Metrics Collected
 
@@ -147,6 +195,8 @@ See `docs/CONCEPT.md` for detailed equivalence matrix.
 - **Latency**: p50, p75, p90, p95, p99, p99.9, max
 - **Resources**: CPU%, memory MB, file descriptors
 - **Errors**: connection errors, timeouts, HTTP errors
+
+---
 
 ## Results
 
@@ -164,14 +214,18 @@ results/
             └── system_info.txt
 ```
 
+---
+
 ## Methodology
 
-See `docs/CONCEPT.md` for:
+See [docs/CONCEPT.md](docs/CONCEPT.md) for:
 
 - Coordinated omission correction
 - Warmup and cooldown procedures
 - Statistical rigor (multiple runs, median reporting)
 - Common pitfalls to avoid
+
+---
 
 ## License
 
