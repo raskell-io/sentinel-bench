@@ -2,7 +2,6 @@
 #MISE description="Run benchmark against a proxy"
 #MISE alias="b"
 #MISE usage="bench <proxy> <scenario> [options]"
-# [MISE] depends=["check-tools"]
 
 set -euo pipefail
 
@@ -10,10 +9,8 @@ set -euo pipefail
 # Sentinel Benchmarking Framework - Main Runner
 # Usage: mise run bench <proxy> <scenario> [options]
 #
-# Examples:
-#   mise run bench sentinel passthrough
-#   mise run bench envoy passthrough --duration 60
-#   mise run bench all passthrough
+# Results are stored in: results/<timestamp>_<proxy>_<scenario>/
+# Each run includes comprehensive metadata for analytics and GitHub Pages.
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -69,19 +66,138 @@ Options:
   --runs <n>           Number of runs (default: $RUNS)
   --target <url>       Target URL (default: $TARGET)
   --tool <oha|wrk2|wrk|hey|k6>  Load generator (default: auto-detect)
+  --name <string>      Optional name/tag for this benchmark run
   --help               Show this help
 
-Environment Variables (set in mise.toml or shell):
-  BENCH_DURATION, BENCH_CONNECTIONS, BENCH_RATE, etc.
-
-Examples:
-  mise run bench sentinel passthrough
-  mise run bench envoy passthrough --duration 120 --rate 50000
-  mise run bench all passthrough
+Results are stored in: results/<timestamp>_<proxy>_<scenario>/
 
 EOF
     exit 0
 }
+
+# =============================================================================
+# Environment Detection
+# =============================================================================
+
+get_cpu_info() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sysctl -n machdep.cpu.brand_string 2>/dev/null || echo "Unknown"
+    else
+        grep "model name" /proc/cpuinfo 2>/dev/null | head -1 | cut -d: -f2 | xargs || echo "Unknown"
+    fi
+}
+
+get_cpu_cores() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sysctl -n hw.ncpu 2>/dev/null || echo "0"
+    else
+        nproc 2>/dev/null || echo "0"
+    fi
+}
+
+get_memory_gb() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        local bytes
+        bytes=$(sysctl -n hw.memsize 2>/dev/null || echo "0")
+        echo $((bytes / 1024 / 1024 / 1024))
+    else
+        free -g 2>/dev/null | awk '/^Mem:/{print $2}' || echo "0"
+    fi
+}
+
+get_machine_model() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sysctl -n hw.model 2>/dev/null || echo "Unknown"
+    else
+        cat /sys/class/dmi/id/product_name 2>/dev/null || echo "Unknown"
+    fi
+}
+
+get_os_info() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sw_vers -productName 2>/dev/null || echo "macOS"
+    else
+        cat /etc/os-release 2>/dev/null | grep "^PRETTY_NAME" | cut -d= -f2 | tr -d '"' || echo "Linux"
+    fi
+}
+
+get_os_version() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sw_vers -productVersion 2>/dev/null || echo "Unknown"
+    else
+        cat /etc/os-release 2>/dev/null | grep "^VERSION_ID" | cut -d= -f2 | tr -d '"' || echo "Unknown"
+    fi
+}
+
+get_kernel_version() {
+    uname -r 2>/dev/null || echo "Unknown"
+}
+
+get_architecture() {
+    uname -m 2>/dev/null || echo "Unknown"
+}
+
+# =============================================================================
+# Proxy Version Detection
+# =============================================================================
+
+get_proxy_version() {
+    local proxy="$1"
+    local version="unknown"
+
+    case "$proxy" in
+        sentinel)
+            # Try to get version from running container or binary
+            version=$(docker exec bench-sentinel sentinel --version 2>/dev/null | head -1 || echo "unknown")
+            if [[ "$version" == "unknown" ]]; then
+                version=$(sentinel --version 2>/dev/null | head -1 || echo "unknown")
+            fi
+            ;;
+        envoy)
+            version=$(docker exec bench-envoy envoy --version 2>/dev/null | grep -oE 'version: [0-9.]+' | cut -d' ' -f2 || echo "unknown")
+            if [[ "$version" == "unknown" || -z "$version" ]]; then
+                version=$(docker inspect bench-envoy 2>/dev/null | grep -oE 'envoyproxy/envoy:v[0-9.]+' | head -1 | cut -d: -f2 || echo "unknown")
+            fi
+            ;;
+        haproxy)
+            version=$(docker exec bench-haproxy haproxy -v 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
+            ;;
+        nginx)
+            version=$(docker exec bench-nginx nginx -v 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
+            ;;
+    esac
+
+    echo "$version"
+}
+
+get_tool_version() {
+    local tool="$1"
+    local version="unknown"
+
+    case "$tool" in
+        oha)
+            version=$(oha --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "unknown")
+            ;;
+        wrk2)
+            version=$(wrk2 --version 2>/dev/null | head -1 || echo "unknown")
+            ;;
+        wrk)
+            version=$(wrk --version 2>/dev/null | head -1 || echo "unknown")
+            ;;
+        hey)
+            version=$(hey --version 2>/dev/null || echo "unknown")
+            ;;
+        k6)
+            version=$(k6 version 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
+            ;;
+    esac
+
+    echo "$version"
+}
+
+# =============================================================================
+# Tool Detection
+# =============================================================================
 
 detect_tool() {
     if command -v oha &>/dev/null; then
@@ -121,6 +237,10 @@ check_proxy_running() {
     return 0
 }
 
+# =============================================================================
+# Benchmark Execution
+# =============================================================================
+
 run_warmup() {
     local tool="$1"
     log_info "Running warmup for ${WARMUP}s..."
@@ -139,7 +259,6 @@ run_warmup() {
             hey -z "${WARMUP}s" -c 50 -q 20 "$TARGET/" >/dev/null 2>&1 || true
             ;;
         k6)
-            # k6 warmup would need a script
             sleep "$WARMUP"
             ;;
     esac
@@ -149,8 +268,19 @@ run_warmup() {
 
 run_benchmark_oha() {
     local output_file="$1"
+    local json_file="$2"
     log_info "Running oha: ${CONNECTIONS} connections, ${RATE} RPS, ${DURATION}s"
 
+    # Run with JSON output for machine parsing
+    oha \
+        -z "${DURATION}s" \
+        -c "$CONNECTIONS" \
+        -q "$RATE" \
+        --no-tui \
+        -j \
+        "$TARGET/" > "$json_file" 2>&1
+
+    # Also capture human-readable output
     oha \
         -z "${DURATION}s" \
         -c "$CONNECTIONS" \
@@ -161,6 +291,7 @@ run_benchmark_oha() {
 
 run_benchmark_wrk2() {
     local output_file="$1"
+    local json_file="$2"
     log_info "Running wrk2: ${THREADS} threads, ${CONNECTIONS} connections, ${RATE} RPS, ${DURATION}s"
 
     wrk2 \
@@ -170,10 +301,14 @@ run_benchmark_wrk2() {
         -R"$RATE" \
         --latency \
         "$TARGET/" 2>&1 | tee "$output_file"
+
+    # wrk2 doesn't have native JSON, create a placeholder
+    echo '{"tool": "wrk2", "note": "Parse from txt output"}' > "$json_file"
 }
 
 run_benchmark_wrk() {
     local output_file="$1"
+    local json_file="$2"
     log_info "Running wrk: ${THREADS} threads, ${CONNECTIONS} connections, ${DURATION}s"
 
     wrk \
@@ -182,10 +317,13 @@ run_benchmark_wrk() {
         -d"${DURATION}s" \
         --latency \
         "$TARGET/" 2>&1 | tee "$output_file"
+
+    echo '{"tool": "wrk", "note": "Parse from txt output"}' > "$json_file"
 }
 
 run_benchmark_hey() {
     local output_file="$1"
+    local json_file="$2"
     log_info "Running hey: ${CONNECTIONS} connections, ${RATE} RPS, ${DURATION}s"
 
     hey \
@@ -193,17 +331,20 @@ run_benchmark_hey() {
         -c "$CONNECTIONS" \
         -q "$((RATE / CONNECTIONS))" \
         "$TARGET/" 2>&1 | tee "$output_file"
+
+    echo '{"tool": "hey", "note": "Parse from txt output"}' > "$json_file"
 }
 
 run_benchmark_k6() {
     local output_file="$1"
+    local json_file="$2"
     log_info "Running k6: ${CONNECTIONS} VUs, ${DURATION}s"
 
     k6 run --quiet \
         -e TARGET="$TARGET" \
         -e DURATION="${DURATION}s" \
         -e VUS="$CONNECTIONS" \
-        --summary-export="$output_file.json" \
+        --summary-export="$json_file" \
         - <<'SCRIPT' 2>&1 | tee "$output_file"
 import http from 'k6/http';
 import { check } from 'k6';
@@ -220,59 +361,144 @@ export default function () {
 SCRIPT
 }
 
-run_single_benchmark() {
-    local proxy="$1"
-    local scenario="$2"
-    local run_num="$3"
-    local tool="$4"
+# =============================================================================
+# Metadata Generation
+# =============================================================================
 
-    local timestamp
-    timestamp=$(date +%Y%m%d_%H%M%S)
-    local result_dir="$RESULTS_DIR/${proxy}/${scenario}/${timestamp}"
-    mkdir -p "$result_dir"
+generate_metadata() {
+    local result_dir="$1"
+    local proxy="$2"
+    local scenario="$3"
+    local start_time="$4"
+    local end_time="$5"
 
-    local output_file="$result_dir/run_${run_num}.txt"
+    local proxy_version
+    proxy_version=$(get_proxy_version "$proxy")
+    local tool_version
+    tool_version=$(get_tool_version "$TOOL")
 
-    log_info "Run $run_num of $RUNS for $proxy ($scenario)"
-
-    case "$tool" in
-        oha)   run_benchmark_oha "$output_file" ;;
-        wrk2)  run_benchmark_wrk2 "$output_file" ;;
-        wrk)   run_benchmark_wrk "$output_file" ;;
-        hey)   run_benchmark_hey "$output_file" ;;
-        k6)    run_benchmark_k6 "$output_file" ;;
-    esac
-
-    echo "$result_dir"
+    cat > "$result_dir/metadata.json" <<EOF
+{
+  "schema_version": "1.0.0",
+  "id": "$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || date +%s%N)",
+  "timestamp": {
+    "start": "$start_time",
+    "end": "$end_time",
+    "timezone": "$(date +%Z)"
+  },
+  "benchmark": {
+    "proxy": "$proxy",
+    "scenario": "$scenario",
+    "name": "${BENCH_NAME:-}",
+    "config_file": "configs/${proxy}/${scenario}.kdl"
+  },
+  "proxy_info": {
+    "name": "$proxy",
+    "version": "$proxy_version",
+    "container": "bench-${proxy}"
+  },
+  "environment": {
+    "hostname": "$(hostname)",
+    "machine_model": "$(get_machine_model)",
+    "os": {
+      "name": "$(get_os_info)",
+      "version": "$(get_os_version)",
+      "kernel": "$(get_kernel_version)"
+    },
+    "cpu": {
+      "model": "$(get_cpu_info)",
+      "cores": $(get_cpu_cores),
+      "architecture": "$(get_architecture)"
+    },
+    "memory_gb": $(get_memory_gb),
+    "container_runtime": "$(docker --version 2>/dev/null | head -1 || echo 'unknown')"
+  },
+  "test_parameters": {
+    "duration_seconds": $DURATION,
+    "warmup_seconds": $WARMUP,
+    "connections": $CONNECTIONS,
+    "threads": $THREADS,
+    "target_rate": $RATE,
+    "runs": $RUNS,
+    "target_url": "$TARGET"
+  },
+  "load_generator": {
+    "tool": "$TOOL",
+    "version": "$tool_version"
+  },
+  "runs": [
+$(for i in $(seq 1 "$RUNS"); do
+    echo "    {\"run\": $i, \"output\": \"runs/run_${i}.txt\", \"data\": \"runs/run_${i}.json\"}$( [ $i -lt $RUNS ] && echo ',')"
+done)
+  ]
+}
+EOF
 }
 
-collect_system_metrics() {
-    local output_file="$1"
+generate_summary() {
+    local result_dir="$1"
+    local proxy="$2"
+    local scenario="$3"
+    local start_time="$4"
 
-    {
-        echo "=== System Info ==="
-        uname -a
-        echo ""
-        echo "=== CPU Info ==="
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            sysctl -n machdep.cpu.brand_string 2>/dev/null || echo "Unknown"
-            echo "Cores: $(sysctl -n hw.ncpu 2>/dev/null || echo 'Unknown')"
-        else
-            grep "model name" /proc/cpuinfo 2>/dev/null | head -1 || echo "Unknown"
-            echo "Cores: $(nproc 2>/dev/null || echo 'Unknown')"
-        fi
-        echo ""
-        echo "=== Memory ==="
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            vm_stat 2>/dev/null | head -5 || echo "Unknown"
-        else
-            free -h 2>/dev/null || echo "Unknown"
-        fi
-        echo ""
-        echo "=== Load Generator ==="
-        echo "Tool: $TOOL"
-    } > "$output_file"
+    local proxy_version
+    proxy_version=$(get_proxy_version "$proxy")
+
+    cat > "$result_dir/summary.md" <<EOF
+# Benchmark Results
+
+## Overview
+
+| Property | Value |
+|----------|-------|
+| **Proxy** | $proxy |
+| **Version** | $proxy_version |
+| **Scenario** | $scenario |
+| **Date** | $start_time |
+| **Machine** | $(get_machine_model) |
+
+## Environment
+
+| Property | Value |
+|----------|-------|
+| **OS** | $(get_os_info) $(get_os_version) |
+| **Kernel** | $(get_kernel_version) |
+| **CPU** | $(get_cpu_info) |
+| **Cores** | $(get_cpu_cores) |
+| **Memory** | $(get_memory_gb) GB |
+| **Architecture** | $(get_architecture) |
+
+## Test Parameters
+
+| Parameter | Value |
+|-----------|-------|
+| **Duration** | ${DURATION}s |
+| **Warmup** | ${WARMUP}s |
+| **Connections** | $CONNECTIONS |
+| **Target Rate** | $RATE RPS |
+| **Runs** | $RUNS |
+| **Load Generator** | $TOOL $(get_tool_version "$TOOL") |
+
+## Results
+
+See individual run files in \`runs/\` directory:
+
+$(for i in $(seq 1 "$RUNS"); do
+    echo "- [Run $i](runs/run_${i}.txt)"
+done)
+
+## Raw Data
+
+- [metadata.json](metadata.json) - Machine-readable metadata
+$(for i in $(seq 1 "$RUNS"); do
+    echo "- [runs/run_${i}.json](runs/run_${i}.json) - Run $i data"
+done)
+EOF
 }
+
+# =============================================================================
+# Main Benchmark Runner
+# =============================================================================
 
 run_benchmark() {
     local proxy="$1"
@@ -286,11 +512,32 @@ run_benchmark() {
         exit 1
     fi
 
+    # Create result directory with timestamp
+    local timestamp
+    timestamp=$(date +%Y%m%d_%H%M%S)
+    local start_time
+    start_time=$(date -Iseconds)
+    local result_dir="$RESULTS_DIR/${timestamp}_${proxy}_${scenario}"
+    mkdir -p "$result_dir/runs"
+
+    log_info "Results will be saved to: $result_dir"
+
     run_warmup "$TOOL"
 
-    local result_dir=""
+    # Run benchmarks
     for i in $(seq 1 "$RUNS"); do
-        result_dir=$(run_single_benchmark "$proxy" "$scenario" "$i" "$TOOL")
+        local output_file="$result_dir/runs/run_${i}.txt"
+        local json_file="$result_dir/runs/run_${i}.json"
+
+        log_info "Run $i of $RUNS"
+
+        case "$TOOL" in
+            oha)   run_benchmark_oha "$output_file" "$json_file" ;;
+            wrk2)  run_benchmark_wrk2 "$output_file" "$json_file" ;;
+            wrk)   run_benchmark_wrk "$output_file" "$json_file" ;;
+            hey)   run_benchmark_hey "$output_file" "$json_file" ;;
+            k6)    run_benchmark_k6 "$output_file" "$json_file" ;;
+        esac
 
         if [ "$i" -lt "$RUNS" ]; then
             log_info "Cooling down for 5s..."
@@ -298,25 +545,18 @@ run_benchmark() {
         fi
     done
 
-    collect_system_metrics "$result_dir/system_info.txt"
+    local end_time
+    end_time=$(date -Iseconds)
 
-    cat > "$result_dir/params.json" <<EOF
-{
-    "proxy": "$proxy",
-    "scenario": "$scenario",
-    "tool": "$TOOL",
-    "duration": $DURATION,
-    "connections": $CONNECTIONS,
-    "threads": $THREADS,
-    "rate": $RATE,
-    "warmup": $WARMUP,
-    "runs": $RUNS,
-    "target": "$TARGET",
-    "timestamp": "$(date -Iseconds)"
-}
-EOF
+    # Generate metadata and summary
+    generate_metadata "$result_dir" "$proxy" "$scenario" "$start_time" "$end_time"
+    generate_summary "$result_dir" "$proxy" "$scenario" "$start_time"
 
-    log_success "Benchmark complete. Results in: $result_dir"
+    log_success "Benchmark complete!"
+    log_success "Results: $result_dir"
+    log_success "  - metadata.json (machine-readable)"
+    log_success "  - summary.md (human-readable)"
+    log_success "  - runs/ (individual run data)"
 }
 
 run_all_proxies() {
@@ -341,7 +581,7 @@ run_all_proxies() {
         sleep 10
     done
 
-    log_success "All benchmarks complete"
+    log_success "All benchmarks complete. Results in: $RESULTS_DIR"
 }
 
 # =============================================================================
@@ -351,6 +591,7 @@ run_all_proxies() {
 PROXY=""
 SCENARIO=""
 TOOL=""
+BENCH_NAME=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -362,6 +603,7 @@ while [[ $# -gt 0 ]]; do
         --runs)        RUNS="$2"; shift 2 ;;
         --target)      TARGET="$2"; shift 2 ;;
         --tool)        TOOL="$2"; shift 2 ;;
+        --name)        BENCH_NAME="$2"; shift 2 ;;
         --help|-h)     usage ;;
         -*)            log_error "Unknown option: $1"; usage ;;
         *)
