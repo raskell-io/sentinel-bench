@@ -14,12 +14,12 @@ services:
   # Backend Service (shared by all proxies)
   # =============================================================================
   backend:
-    image: kennethreitz/httpbin:latest
+    image: mccutchen/go-httpbin:latest  # Multi-arch (supports arm64)
     container_name: bench-backend
     networks:
       - bench-net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
       interval: 5s
       timeout: 3s
       retries: 3
