@@ -63,15 +63,15 @@ done
 
 [tasks.down]
 description = "Stop all containers"
-run = "docker compose -f docker/docker-compose.yaml down"
+run = "docker-compose -f docker/docker-compose.yaml down"
 
 [tasks.logs]
 description = "Show proxy logs"
-run = "docker compose -f docker/docker-compose.yaml logs -f"
+run = "docker-compose -f docker/docker-compose.yaml logs -f"
 
 [tasks.ps]
 description = "Show running containers"
-run = "docker compose -f docker/docker-compose.yaml ps"
+run = "docker-compose -f docker/docker-compose.yaml ps"
 
 [tasks.clean]
 description = "Clean up results and temporary files"

@@ -569,13 +569,13 @@ run_all_proxies() {
         log_info "=== Testing $proxy ==="
 
         log_info "Starting $proxy..."
-        docker compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile "$proxy" up -d
+        docker-compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile "$proxy" up -d
         sleep 5
 
         run_benchmark "$proxy" "$scenario"
 
         log_info "Stopping $proxy..."
-        docker compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile "$proxy" down
+        docker-compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile "$proxy" down
 
         log_info "Cooling down for 10s..."
         sleep 10

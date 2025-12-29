@@ -14,4 +14,4 @@ SCENARIO="${1:-passthrough}"
 
 # Stop after benchmark
 echo "Stopping HAProxy..."
-docker compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile haproxy down
+docker-compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile haproxy down
