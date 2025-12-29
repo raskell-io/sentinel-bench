@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+#MISE description="Benchmark all proxies sequentially"
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCENARIO="${1:-passthrough}"
+
+echo "=== Benchmarking all proxies ==="
+echo ""
+
+for proxy in sentinel envoy haproxy nginx; do
+    echo ">>> Running bench:$proxy $SCENARIO"
+    mise run "bench:$proxy" "$SCENARIO" "${@:2}"
+    echo ""
+    echo "Cooling down for 10s..."
+    sleep 10
+    echo ""
+done
+
+echo "=== All benchmarks complete ==="

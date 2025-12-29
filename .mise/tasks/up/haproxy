@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+#MISE description="Start HAProxy"
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+echo "Starting HAProxy..."
+docker compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile haproxy up -d
+
+echo "Waiting for HAProxy to be ready..."
+for i in {1..30}; do
+    if curl -sf http://localhost:8080/ >/dev/null 2>&1; then
+        echo "HAProxy is ready!"
+        exit 0
+    fi
+    sleep 1
+done
+
+echo "Warning: HAProxy may not be fully ready"

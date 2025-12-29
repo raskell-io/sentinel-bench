@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+#MISE description="Quick benchmark Envoy (starts, benchmarks, stops)"
+#MISE depends=["up:envoy"]
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+# Run quick benchmark
+"$SCRIPT_DIR/../quick-main" "$@"
+
+# Stop after benchmark
+echo ""
+echo "Stopping Envoy..."
+docker compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile envoy down

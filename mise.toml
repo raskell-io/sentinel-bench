@@ -23,9 +23,6 @@ wrk = "latest"          # HTTP benchmarking tool
 # Note: oha and wrk2 are installed via cargo (see tasks below)
 # We use cargo:oha for the Rust-based load generator with HdrHistogram
 
-# Container tooling (optional, for Docker-based benchmarks)
-# docker-compose = "latest"
-
 # =============================================================================
 # Short Tasks (inline)
 # =============================================================================
@@ -64,26 +61,8 @@ for tool in oha wrk2 wrk hey k6 ab; do
 done
 """
 
-[tasks.up]
-description = "Start Docker infrastructure for a proxy"
-usage = "up <proxy>"
-run = """
-#!/usr/bin/env bash
-set -euo pipefail
-PROXY="${1:-}"
-if [[ -z "$PROXY" ]]; then
-    echo "Usage: mise run up <proxy>"
-    echo "Proxies: sentinel, envoy, haproxy, nginx"
-    exit 1
-fi
-docker compose -f docker/docker-compose.yaml --profile "$PROXY" up -d
-echo "Started $PROXY - waiting for health check..."
-sleep 3
-curl -sf http://localhost:8080/ >/dev/null && echo "Proxy ready!" || echo "Warning: proxy may not be ready"
-"""
-
 [tasks.down]
-description = "Stop Docker infrastructure"
+description = "Stop all Docker containers"
 run = "docker compose -f docker/docker-compose.yaml down"
 
 [tasks.logs]
@@ -109,21 +88,23 @@ description = "List benchmark results"
 run = """
 #!/usr/bin/env bash
 if [[ -d results ]] && [[ -n "$(ls -A results 2>/dev/null)" ]]; then
-    find results -type f -name "*.txt" -o -name "*.json" | head -20
+    find results -maxdepth 1 -type d -name "2*" | sort -r | head -10
 else
-    echo "No results yet. Run: mise run bench <proxy> <scenario>"
+    echo "No results yet."
+    echo ""
+    echo "Run a benchmark:"
+    echo "  mise run quick:envoy        # Quick 30s test"
+    echo "  mise run bench:envoy        # Full benchmark"
+    echo "  mise run bench:all          # All proxies"
 fi
 """
-
-# =============================================================================
-# Comparison and Analysis Tasks
-# =============================================================================
 
 [tasks.compare]
 description = "Compare results across proxies"
 run = """
 #!/usr/bin/env bash
 echo "Comparison report generation coming soon..."
-echo "For now, results are in: results/<proxy>/<scenario>/<timestamp>/"
-ls -la results/*/passthrough/ 2>/dev/null | head -20 || echo "No results to compare yet."
+echo ""
+echo "Recent results:"
+find results -maxdepth 1 -type d -name "2*" | sort -r | head -10
 """
