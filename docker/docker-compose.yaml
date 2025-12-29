@@ -44,6 +44,7 @@ services:
   # =============================================================================
   sentinel:
     image: ghcr.io/raskell-io/sentinel:latest
+    platform: linux/amd64  # Emulate until arm64 build available
     container_name: bench-sentinel
     profiles:
       - sentinel
