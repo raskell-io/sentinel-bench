@@ -43,9 +43,7 @@ services:
   # Sentinel Proxy
   # =============================================================================
   sentinel:
-    build:
-      context: ../
-      dockerfile: docker/Dockerfile.sentinel
+    image: ghcr.io/raskell-io/sentinel:latest
     container_name: bench-sentinel
     profiles:
       - sentinel
@@ -54,6 +52,7 @@ services:
       - "9090:9090"
     volumes:
       - ../configs/sentinel:/etc/sentinel:ro
+    command: ["-c", "/etc/sentinel/passthrough.kdl"]
     networks:
       - bench-net
     depends_on:
