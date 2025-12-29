@@ -148,22 +148,22 @@ get_proxy_version() {
     case "$proxy" in
         sentinel)
             # Try to get version from running container or binary
-            version=$(podman exec bench-sentinel sentinel --version 2>/dev/null | head -1 || echo "unknown")
+            version=$(docker exec bench-sentinel sentinel --version 2>/dev/null | head -1 || echo "unknown")
             if [[ "$version" == "unknown" ]]; then
                 version=$(sentinel --version 2>/dev/null | head -1 || echo "unknown")
             fi
             ;;
         envoy)
-            version=$(podman exec bench-envoy envoy --version 2>/dev/null | grep -oE 'version: [0-9.]+' | cut -d' ' -f2 || echo "unknown")
+            version=$(docker exec bench-envoy envoy --version 2>/dev/null | grep -oE 'version: [0-9.]+' | cut -d' ' -f2 || echo "unknown")
             if [[ "$version" == "unknown" || -z "$version" ]]; then
-                version=$(podman inspect bench-envoy 2>/dev/null | grep -oE 'envoyproxy/envoy:v[0-9.]+' | head -1 | cut -d: -f2 || echo "unknown")
+                version=$(docker inspect bench-envoy 2>/dev/null | grep -oE 'envoyproxy/envoy:v[0-9.]+' | head -1 | cut -d: -f2 || echo "unknown")
             fi
             ;;
         haproxy)
-            version=$(podman exec bench-haproxy haproxy -v 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
+            version=$(docker exec bench-haproxy haproxy -v 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
             ;;
         nginx)
-            version=$(podman exec bench-nginx nginx -v 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
+            version=$(docker exec bench-nginx nginx -v 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
             ;;
     esac
 
@@ -411,7 +411,7 @@ generate_metadata() {
       "architecture": "$(get_architecture)"
     },
     "memory_gb": $(get_memory_gb),
-    "container_runtime": "$(podman --version 2>/dev/null | head -1 || echo 'unknown')"
+    "container_runtime": "$(docker --version 2>/dev/null | head -1 || echo 'unknown')"
   },
   "test_parameters": {
     "duration_seconds": $DURATION,
@@ -569,13 +569,13 @@ run_all_proxies() {
         log_info "=== Testing $proxy ==="
 
         log_info "Starting $proxy..."
-        podman compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile "$proxy" up -d
+        docker compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile "$proxy" up -d
         sleep 5
 
         run_benchmark "$proxy" "$scenario"
 
         log_info "Stopping $proxy..."
-        podman compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile "$proxy" down
+        docker compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile "$proxy" down
 
         log_info "Cooling down for 10s..."
         sleep 10

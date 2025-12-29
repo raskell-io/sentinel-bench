@@ -14,4 +14,4 @@ SCENARIO="${1:-passthrough}"
 
 # Stop after benchmark
 echo "Stopping Nginx..."
-podman compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile nginx down
+docker compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile nginx down

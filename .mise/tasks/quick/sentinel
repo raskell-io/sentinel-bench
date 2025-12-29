@@ -13,4 +13,4 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 # Stop after benchmark
 echo ""
 echo "Stopping Sentinel..."
-podman compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile sentinel down
+docker compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile sentinel down

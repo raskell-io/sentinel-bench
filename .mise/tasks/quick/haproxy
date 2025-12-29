@@ -13,4 +13,4 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 # Stop after benchmark
 echo ""
 echo "Stopping HAProxy..."
-podman compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile haproxy down
+docker compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile haproxy down
