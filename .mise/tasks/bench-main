@@ -391,9 +391,19 @@ parse_wrk_output() {
     p99=$(echo "$content" | grep -E "^\s+99%" | awk '{print $2}')
 
     # Extract summary stats from line like "130197 requests in 10.00s, 1.67GB read"
-    local total_requests duration_actual data_read
+    # Duration can be "10.00s" or "1.00m" - convert to seconds
+    local total_requests duration_actual data_read duration_raw
     total_requests=$(echo "$content" | grep "requests in" | awk '{print $1}')
-    duration_actual=$(echo "$content" | grep "requests in" | awk '{print $4}' | tr -d ',s')
+    duration_raw=$(echo "$content" | grep "requests in" | awk '{print $4}' | tr -d ',')
+    # Convert duration to seconds
+    if [[ "$duration_raw" == *"m" ]]; then
+        # Minutes - convert to seconds
+        duration_actual=$(echo "scale=2; ${duration_raw%m} * 60" | bc 2>/dev/null || echo "0")
+    elif [[ "$duration_raw" == *"s" ]]; then
+        duration_actual="${duration_raw%s}"
+    else
+        duration_actual="$duration_raw"
+    fi
     data_read=$(echo "$content" | grep "requests in" | awk '{print $5}')
 
     # Extract final RPS and transfer rate
