@@ -1,0 +1,33 @@
+# Sentinel Proxy Image for Benchmarking
+# Build from source with release optimizations
+
+FROM rust:1.75-bookworm AS builder
+
+WORKDIR /build
+
+# Copy the sentinel source (assumes sentinel repo is at ../sentinel relative to sentinel-bench)
+# For local development, we'll mount the binary instead
+# This Dockerfile is a placeholder for when Sentinel publishes releases
+
+# For now, create a simple placeholder that expects a mounted binary
+RUN echo "Placeholder for Sentinel build"
+
+# Final image
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create config directory
+RUN mkdir -p /etc/sentinel
+
+# The actual sentinel binary should be mounted at runtime
+# or copied from a local build:
+# COPY --from=builder /build/target/release/sentinel /usr/local/bin/sentinel
+
+EXPOSE 8080 9090
+
+# Placeholder entrypoint - override with actual sentinel binary
+ENTRYPOINT ["echo", "Mount sentinel binary at /usr/local/bin/sentinel"]

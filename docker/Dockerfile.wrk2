@@ -1,0 +1,43 @@
+# wrk2 Load Generator Image
+# Based on Alpine for small size, builds wrk2 from source
+
+FROM alpine:3.19 AS builder
+
+RUN apk add --no-cache \
+    build-base \
+    openssl-dev \
+    git \
+    luajit-dev
+
+# Clone and build wrk2
+RUN git clone https://github.com/giltene/wrk2.git /wrk2 && \
+    cd /wrk2 && \
+    make -j$(nproc)
+
+# Also build oha (Rust-based HTTP load generator)
+FROM rust:1.75-alpine AS oha-builder
+RUN apk add --no-cache musl-dev openssl-dev
+RUN cargo install oha --locked
+
+# Final image
+FROM alpine:3.19
+
+RUN apk add --no-cache \
+    openssl \
+    luajit \
+    bash \
+    curl \
+    jq
+
+# Copy wrk2
+COPY --from=builder /wrk2/wrk /usr/local/bin/wrk2
+
+# Copy oha
+COPY --from=oha-builder /usr/local/cargo/bin/oha /usr/local/bin/oha
+
+# Verify installations
+RUN wrk2 --version && oha --version
+
+WORKDIR /benchmark
+
+ENTRYPOINT ["/bin/bash"]

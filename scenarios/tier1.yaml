@@ -1,0 +1,202 @@
+# Tier 1 Benchmark Scenarios
+# Core performance tests required for competitive claims
+
+scenarios:
+  # =============================================================================
+  # Passthrough - Basic L7 proxy performance
+  # =============================================================================
+  passthrough:
+    description: "Simple HTTP passthrough, no processing"
+    category: tier1
+    configs:
+      sentinel: configs/sentinel/passthrough.kdl
+      envoy: configs/envoy/passthrough.yaml
+      haproxy: configs/haproxy/passthrough.cfg
+      nginx: configs/nginx/passthrough.conf
+
+    tests:
+      # Latency-focused test (constant rate, measure latency)
+      latency:
+        type: latency
+        duration: 60
+        warmup: 10
+        runs: 5
+        connections: 100
+        rate: 10000  # Below saturation
+        metrics:
+          - latency_p50
+          - latency_p95
+          - latency_p99
+          - latency_p999
+
+      # Throughput-focused test (max RPS)
+      throughput:
+        type: throughput
+        duration: 60
+        warmup: 10
+        runs: 5
+        connections: 1000
+        rate: 0  # Unlimited (measure max)
+        metrics:
+          - requests_per_second
+          - bytes_per_second
+          - error_rate
+
+      # Connection scaling test
+      connections:
+        type: scaling
+        duration: 30
+        warmup: 5
+        runs: 3
+        connection_levels: [100, 500, 1000, 5000, 10000]
+        rate: 50000
+        metrics:
+          - latency_p99
+          - memory_mb
+          - cpu_percent
+
+  # =============================================================================
+  # Routing - Path-based route matching
+  # =============================================================================
+  routing:
+    description: "100 routes with path-prefix matching"
+    category: tier1
+    configs:
+      sentinel: configs/sentinel/routing.kdl
+      envoy: configs/envoy/routing.yaml
+      haproxy: configs/haproxy/routing.cfg
+      nginx: configs/nginx/routing.conf
+
+    tests:
+      match_first:
+        description: "Hit first route (best case)"
+        type: latency
+        duration: 60
+        connections: 100
+        rate: 10000
+        path: "/route-001/"
+
+      match_last:
+        description: "Hit last route (worst case)"
+        type: latency
+        duration: 60
+        connections: 100
+        rate: 10000
+        path: "/route-100/"
+
+      match_random:
+        description: "Random route selection"
+        type: latency
+        duration: 60
+        connections: 100
+        rate: 10000
+        path_pattern: "/route-{1..100}/"
+
+  # =============================================================================
+  # Load Balancing - Distribution across backends
+  # =============================================================================
+  loadbalancing:
+    description: "Load distribution across multiple backends"
+    category: tier1
+
+    tests:
+      round_robin:
+        backends: 4
+        algorithm: round_robin
+        duration: 60
+        connections: 200
+        rate: 20000
+        metrics:
+          - distribution_fairness
+          - latency_p99
+
+      least_connections:
+        backends: 4
+        algorithm: least_connections
+        duration: 60
+        connections: 200
+        rate: 20000
+
+      p2c:
+        description: "Power-of-Two Choices (Sentinel-specific)"
+        backends: 4
+        algorithm: p2c
+        duration: 60
+        connections: 200
+        rate: 20000
+
+  # =============================================================================
+  # TLS Termination - HTTPS frontend
+  # =============================================================================
+  tls:
+    description: "TLS termination performance"
+    category: tier1
+
+    tests:
+      # New connection per request (handshake cost)
+      handshake:
+        type: latency
+        duration: 60
+        connections: 100
+        keepalive: false
+        rate: 1000
+        metrics:
+          - tls_handshake_time
+          - latency_p99
+
+      # Session resumption
+      resumption:
+        type: latency
+        duration: 60
+        connections: 100
+        keepalive: true
+        rate: 10000
+        metrics:
+          - session_reuse_rate
+          - latency_p99
+
+  # =============================================================================
+  # Connection Scaling - High concurrency
+  # =============================================================================
+  connection_scaling:
+    description: "Performance under high connection counts"
+    category: tier1
+
+    tests:
+      scale_1k:
+        connections: 1000
+        duration: 60
+        rate: 10000
+
+      scale_10k:
+        connections: 10000
+        duration: 60
+        rate: 50000
+
+      scale_50k:
+        connections: 50000
+        duration: 60
+        rate: 100000
+        # Requires ulimit adjustments
+
+# =============================================================================
+# Global Test Configuration
+# =============================================================================
+defaults:
+  warmup: 10
+  cooldown: 5
+  runs: 3
+  timeout: 30
+  backend: httpbin
+
+reporting:
+  format: json
+  include_raw: true
+  include_histograms: true
+
+thresholds:
+  # Performance gates for CI
+  passthrough:
+    latency_p99_ms: 10
+    min_rps: 50000
+    max_error_rate: 0.001

@@ -1,0 +1,129 @@
+# Sentinel Benchmarking Framework
+# mise configuration for task running and dependency management
+
+[env]
+# Default benchmark settings (can be overridden)
+BENCH_DURATION = "60"
+BENCH_CONNECTIONS = "100"
+BENCH_RATE = "10000"
+BENCH_WARMUP = "10"
+BENCH_RUNS = "3"
+BENCH_TARGET = "http://localhost:8080"
+
+# =============================================================================
+# Tool Dependencies
+# =============================================================================
+
+[tools]
+# Load generators
+k6 = "latest"           # Grafana k6 - scriptable load testing
+hey = "latest"          # Simple HTTP load generator
+wrk = "latest"          # HTTP benchmarking tool
+
+# Note: oha and wrk2 are installed via cargo (see tasks below)
+# We use cargo:oha for the Rust-based load generator with HdrHistogram
+
+# Container tooling (optional, for Docker-based benchmarks)
+# docker-compose = "latest"
+
+# =============================================================================
+# Short Tasks (inline)
+# =============================================================================
+
+[tasks.install-oha]
+description = "Install oha load generator via cargo"
+run = "cargo install oha --locked"
+
+[tasks.install-wrk2]
+description = "Install wrk2 (requires manual build)"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+if command -v wrk2 &>/dev/null; then
+    echo "wrk2 already installed"
+    exit 0
+fi
+echo "wrk2 requires manual installation:"
+echo "  git clone https://github.com/giltene/wrk2.git"
+echo "  cd wrk2 && make"
+echo "  sudo cp wrk /usr/local/bin/wrk2"
+"""
+
+[tasks.check-tools]
+description = "Check which load generators are available"
+run = """
+#!/usr/bin/env bash
+echo "Load Generator Status:"
+echo "======================"
+for tool in oha wrk2 wrk hey k6 ab; do
+    if command -v "$tool" &>/dev/null; then
+        echo "  ✓ $tool: $(command -v $tool)"
+    else
+        echo "  ✗ $tool: not found"
+    fi
+done
+"""
+
+[tasks.up]
+description = "Start Docker infrastructure for a proxy"
+usage = "up <proxy>"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+PROXY="${1:-}"
+if [[ -z "$PROXY" ]]; then
+    echo "Usage: mise run up <proxy>"
+    echo "Proxies: sentinel, envoy, haproxy, nginx"
+    exit 1
+fi
+docker compose -f docker/docker-compose.yaml --profile "$PROXY" up -d
+echo "Started $PROXY - waiting for health check..."
+sleep 3
+curl -sf http://localhost:8080/ >/dev/null && echo "Proxy ready!" || echo "Warning: proxy may not be ready"
+"""
+
+[tasks.down]
+description = "Stop Docker infrastructure"
+run = "docker compose -f docker/docker-compose.yaml down"
+
+[tasks.logs]
+description = "Show proxy logs"
+run = "docker compose -f docker/docker-compose.yaml logs -f"
+
+[tasks.ps]
+description = "Show running containers"
+run = "docker compose -f docker/docker-compose.yaml ps"
+
+[tasks.clean]
+description = "Clean up results and temporary files"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+echo "Cleaning results directory..."
+rm -rf results/*
+echo "Done."
+"""
+
+[tasks.results]
+description = "List benchmark results"
+run = """
+#!/usr/bin/env bash
+if [[ -d results ]] && [[ -n "$(ls -A results 2>/dev/null)" ]]; then
+    find results -type f -name "*.txt" -o -name "*.json" | head -20
+else
+    echo "No results yet. Run: mise run bench <proxy> <scenario>"
+fi
+"""
+
+# =============================================================================
+# Comparison and Analysis Tasks
+# =============================================================================
+
+[tasks.compare]
+description = "Compare results across proxies"
+run = """
+#!/usr/bin/env bash
+echo "Comparison report generation coming soon..."
+echo "For now, results are in: results/<proxy>/<scenario>/<timestamp>/"
+ls -la results/*/passthrough/ 2>/dev/null | head -20 || echo "No results to compare yet."
+"""

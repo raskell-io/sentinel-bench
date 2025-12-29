@@ -1,0 +1,180 @@
+# Sentinel Benchmarking Framework - Local Docker Infrastructure
+# Usage: docker compose -f docker/docker-compose.yaml --profile <proxy> up
+#
+# Profiles:
+#   - sentinel: Run Sentinel proxy
+#   - envoy: Run Envoy proxy
+#   - haproxy: Run HAProxy proxy
+#   - nginx: Run Nginx proxy
+#
+# Example: docker compose -f docker/docker-compose.yaml --profile sentinel up
+
+services:
+  # =============================================================================
+  # Backend Service (shared by all proxies)
+  # =============================================================================
+  backend:
+    image: kennethreitz/httpbin:latest
+    container_name: bench-backend
+    networks:
+      - bench-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 2G
+
+  # Alternative: Ultra-fast echo server for maximum throughput testing
+  echo:
+    image: hashicorp/http-echo:latest
+    container_name: bench-echo
+    command: ["-text", "OK"]
+    networks:
+      - bench-net
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 512M
+
+  # =============================================================================
+  # Sentinel Proxy
+  # =============================================================================
+  sentinel:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile.sentinel
+    container_name: bench-sentinel
+    profiles:
+      - sentinel
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    volumes:
+      - ../configs/sentinel:/etc/sentinel:ro
+    networks:
+      - bench-net
+    depends_on:
+      backend:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 2G
+
+  # =============================================================================
+  # Envoy Proxy
+  # =============================================================================
+  envoy:
+    image: envoyproxy/envoy:v1.31-latest
+    container_name: bench-envoy
+    profiles:
+      - envoy
+    ports:
+      - "8080:8080"
+      - "9090:9901"
+    volumes:
+      - ../configs/envoy/passthrough.yaml:/etc/envoy/envoy.yaml:ro
+    command: ["-c", "/etc/envoy/envoy.yaml", "--concurrency", "0"]
+    networks:
+      - bench-net
+    depends_on:
+      backend:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 2G
+
+  # =============================================================================
+  # HAProxy
+  # =============================================================================
+  haproxy:
+    image: haproxy:2.9-alpine
+    container_name: bench-haproxy
+    profiles:
+      - haproxy
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    volumes:
+      - ../configs/haproxy/passthrough.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks:
+      - bench-net
+    depends_on:
+      backend:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 2G
+
+  # =============================================================================
+  # Nginx
+  # =============================================================================
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: bench-nginx
+    profiles:
+      - nginx
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    volumes:
+      - ../configs/nginx/passthrough.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - bench-net
+    depends_on:
+      backend:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 2G
+
+  # =============================================================================
+  # Load Generator (wrk2)
+  # =============================================================================
+  wrk2:
+    build:
+      context: .
+      dockerfile: Dockerfile.wrk2
+    container_name: bench-wrk2
+    profiles:
+      - loadgen
+    network_mode: host  # Use host network for accurate measurements
+    volumes:
+      - ../scenarios:/scenarios:ro
+      - ../results:/results
+    entrypoint: ["tail", "-f", "/dev/null"]  # Keep alive for interactive use
+
+  # =============================================================================
+  # Metrics Collection
+  # =============================================================================
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: bench-prometheus
+    profiles:
+      - metrics
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - bench-net
+
+networks:
+  bench-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

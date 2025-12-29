@@ -1,0 +1,20 @@
+# Results (large files, regenerated)
+results/
+
+# Docker build artifacts
+docker/*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Temporary files
+*.tmp
+*.bak

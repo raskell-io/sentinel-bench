@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+#MISE description="Set up the benchmarking environment"
+#MISE alias="s"
+
+set -euo pipefail
+
+# =============================================================================
+# Setup script for Sentinel Benchmarking Framework
+# Installs dependencies and validates the environment
+# =============================================================================
+
+echo "Sentinel Benchmarking Framework Setup"
+echo "======================================"
+echo ""
+
+# Colors
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+success() { echo -e "${GREEN}✓${NC} $1"; }
+warn() { echo -e "${YELLOW}!${NC} $1"; }
+error() { echo -e "${RED}✗${NC} $1"; }
+
+# Step 1: Install mise-managed tools
+echo "Step 1: Installing mise-managed tools..."
+if command -v mise &>/dev/null; then
+    mise install
+    success "mise tools installed (hey, k6, wrk)"
+else
+    error "mise not found. Install from https://mise.jdx.dev"
+    exit 1
+fi
+echo ""
+
+# Step 2: Check for oha (preferred load generator)
+echo "Step 2: Checking for oha..."
+if command -v oha &>/dev/null; then
+    success "oha already installed: $(oha --version 2>&1 | head -1)"
+else
+    warn "oha not found. Installing via cargo..."
+    if command -v cargo &>/dev/null; then
+        cargo install oha --locked
+        success "oha installed"
+    else
+        warn "cargo not found. Install Rust or use: brew install oha"
+    fi
+fi
+echo ""
+
+# Step 3: Check Docker
+echo "Step 3: Checking Docker..."
+if command -v docker &>/dev/null; then
+    if docker info &>/dev/null; then
+        success "Docker is running"
+    else
+        warn "Docker installed but not running. Start Docker Desktop."
+    fi
+else
+    warn "Docker not found. Install Docker for container-based benchmarks."
+fi
+echo ""
+
+# Step 4: Verify directory structure
+echo "Step 4: Verifying directory structure..."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+required_dirs=("configs" "docker" "scenarios" "results" "docs")
+for dir in "${required_dirs[@]}"; do
+    if [[ -d "$ROOT_DIR/$dir" ]]; then
+        success "$dir/"
+    else
+        mkdir -p "$ROOT_DIR/$dir"
+        warn "$dir/ created"
+    fi
+done
+echo ""
+
+# Step 5: Summary
+echo "Setup Complete!"
+echo "==============="
+echo ""
+echo "Available load generators:"
+for tool in oha wrk2 wrk hey k6; do
+    if command -v "$tool" &>/dev/null; then
+        echo "  ✓ $tool"
+    fi
+done
+echo ""
+echo "Quick start:"
+echo "  mise run up envoy        # Start Envoy proxy"
+echo "  mise run quick           # Run quick benchmark"
+echo "  mise run bench envoy passthrough  # Full benchmark"
+echo "  mise run down            # Stop containers"
+echo ""

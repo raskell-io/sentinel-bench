@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+#MISE description="Quick benchmark against a running proxy"
+#MISE alias="q"
+#MISE usage="quick [target_url]"
+
+set -euo pipefail
+
+# =============================================================================
+# Quick local benchmark without Docker
+# Usage: mise run quick [target_url]
+#
+# Runs a quick 30-second benchmark against an already-running proxy.
+# Useful for development iteration.
+# =============================================================================
+
+TARGET="${1:-${BENCH_TARGET:-http://localhost:8080}}"
+DURATION="${BENCH_DURATION:-30}"
+CONNECTIONS="${BENCH_CONNECTIONS:-100}"
+RATE="${BENCH_RATE:-10000}"
+
+echo "Quick Benchmark"
+echo "==============="
+echo "Target: $TARGET"
+echo "Duration: ${DURATION}s"
+echo "Connections: $CONNECTIONS"
+echo "Rate: $RATE RPS"
+echo ""
+
+# Check if target is reachable
+if ! curl -sf -o /dev/null "$TARGET/" 2>/dev/null; then
+    echo "ERROR: Cannot reach $TARGET"
+    echo "Start a proxy first with: mise run up <proxy>"
+    exit 1
+fi
+
+# Detect and run with best available tool
+if command -v oha &>/dev/null; then
+    echo "Using: oha"
+    echo ""
+    oha -z "${DURATION}s" -c "$CONNECTIONS" -q "$RATE" --no-tui "$TARGET/"
+elif command -v wrk2 &>/dev/null; then
+    echo "Using: wrk2"
+    echo ""
+    wrk2 -t4 -c"$CONNECTIONS" -d"${DURATION}s" -R"$RATE" --latency "$TARGET/"
+elif command -v wrk &>/dev/null; then
+    echo "Using: wrk (warning: no coordinated omission correction)"
+    echo ""
+    wrk -t4 -c"$CONNECTIONS" -d"${DURATION}s" --latency "$TARGET/"
+elif command -v hey &>/dev/null; then
+    echo "Using: hey"
+    echo ""
+    hey -z "${DURATION}s" -c "$CONNECTIONS" -q "$((RATE / CONNECTIONS))" "$TARGET/"
+elif command -v k6 &>/dev/null; then
+    echo "Using: k6"
+    echo ""
+    k6 run --quiet -e TARGET="$TARGET" -e DURATION="${DURATION}s" -e VUS="$CONNECTIONS" - <<'SCRIPT'
+import http from 'k6/http';
+export const options = { vus: parseInt(__ENV.VUS), duration: __ENV.DURATION };
+export default function () { http.get(__ENV.TARGET + '/'); }
+SCRIPT
+else
+    echo "ERROR: No load generator found."
+    echo ""
+    echo "Install one of:"
+    echo "  mise run install-oha   # Rust-based, recommended"
+    echo "  mise install           # Install hey, k6, wrk from mise.toml"
+    echo ""
+    echo "Or manually:"
+    echo "  brew install oha"
+    echo "  cargo install oha"
+    exit 1
+fi

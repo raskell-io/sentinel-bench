@@ -1,0 +1,17 @@
+# Prometheus Configuration for Benchmark Metrics Collection
+
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  # Scrape the proxy under test
+  - job_name: 'proxy'
+    static_configs:
+      - targets: ['host.docker.internal:9090']
+    metrics_path: /metrics
+
+  # Scrape Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

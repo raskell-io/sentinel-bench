@@ -1,0 +1,394 @@
+#!/usr/bin/env bash
+#MISE description="Run benchmark against a proxy"
+#MISE alias="b"
+#MISE usage="bench <proxy> <scenario> [options]"
+# [MISE] depends=["check-tools"]
+
+set -euo pipefail
+
+# =============================================================================
+# Sentinel Benchmarking Framework - Main Runner
+# Usage: mise run bench <proxy> <scenario> [options]
+#
+# Examples:
+#   mise run bench sentinel passthrough
+#   mise run bench envoy passthrough --duration 60
+#   mise run bench all passthrough
+# =============================================================================
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+RESULTS_DIR="$ROOT_DIR/results"
+
+# Use environment variables with defaults
+DURATION="${BENCH_DURATION:-60}"
+CONNECTIONS="${BENCH_CONNECTIONS:-100}"
+THREADS="${BENCH_THREADS:-4}"
+RATE="${BENCH_RATE:-10000}"
+WARMUP="${BENCH_WARMUP:-10}"
+RUNS="${BENCH_RUNS:-3}"
+TARGET="${BENCH_TARGET:-http://localhost:8080}"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
+log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
+log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+
+usage() {
+    cat <<EOF
+Sentinel Benchmarking Framework
+
+Usage: mise run bench <proxy> <scenario> [options]
+
+Proxies:
+  sentinel    Sentinel reverse proxy
+  envoy       Envoy proxy
+  haproxy     HAProxy
+  nginx       Nginx
+  all         Run all proxies (comparison mode)
+
+Scenarios:
+  passthrough Basic L7 passthrough (no processing)
+  routing     Multiple routes, path matching
+  tls         HTTPS termination
+  loadbalance Multiple backends
+
+Options:
+  --duration <secs>    Test duration (default: $DURATION)
+  --connections <n>    Concurrent connections (default: $CONNECTIONS)
+  --threads <n>        Worker threads (default: $THREADS)
+  --rate <rps>         Target requests/second (default: $RATE)
+  --warmup <secs>      Warmup duration (default: $WARMUP)
+  --runs <n>           Number of runs (default: $RUNS)
+  --target <url>       Target URL (default: $TARGET)
+  --tool <oha|wrk2|wrk|hey|k6>  Load generator (default: auto-detect)
+  --help               Show this help
+
+Environment Variables (set in mise.toml or shell):
+  BENCH_DURATION, BENCH_CONNECTIONS, BENCH_RATE, etc.
+
+Examples:
+  mise run bench sentinel passthrough
+  mise run bench envoy passthrough --duration 120 --rate 50000
+  mise run bench all passthrough
+
+EOF
+    exit 0
+}
+
+detect_tool() {
+    if command -v oha &>/dev/null; then
+        echo "oha"
+    elif command -v wrk2 &>/dev/null; then
+        echo "wrk2"
+    elif command -v wrk &>/dev/null; then
+        log_warn "Using wrk instead of wrk2 - latency may have coordinated omission"
+        echo "wrk"
+    elif command -v hey &>/dev/null; then
+        echo "hey"
+    elif command -v k6 &>/dev/null; then
+        echo "k6"
+    else
+        log_error "No load generator found."
+        log_error "Install one with: mise run install-oha  OR  mise install"
+        exit 1
+    fi
+}
+
+check_proxy_running() {
+    local max_attempts=30
+    local attempt=0
+
+    log_info "Waiting for proxy at $TARGET..."
+
+    while ! curl -s -o /dev/null -w "%{http_code}" "$TARGET/" 2>/dev/null | grep -qE "200|404|301|302"; do
+        attempt=$((attempt + 1))
+        if [ $attempt -ge $max_attempts ]; then
+            log_error "Proxy not responding after ${max_attempts}s"
+            return 1
+        fi
+        sleep 1
+    done
+
+    log_success "Proxy is ready"
+    return 0
+}
+
+run_warmup() {
+    local tool="$1"
+    log_info "Running warmup for ${WARMUP}s..."
+
+    case "$tool" in
+        oha)
+            oha -z "${WARMUP}s" -c 50 -q 1000 --no-tui "$TARGET/" >/dev/null 2>&1 || true
+            ;;
+        wrk2)
+            wrk2 -t2 -c50 -d"${WARMUP}s" -R1000 "$TARGET/" >/dev/null 2>&1 || true
+            ;;
+        wrk)
+            wrk -t2 -c50 -d"${WARMUP}s" "$TARGET/" >/dev/null 2>&1 || true
+            ;;
+        hey)
+            hey -z "${WARMUP}s" -c 50 -q 20 "$TARGET/" >/dev/null 2>&1 || true
+            ;;
+        k6)
+            # k6 warmup would need a script
+            sleep "$WARMUP"
+            ;;
+    esac
+
+    log_success "Warmup complete"
+}
+
+run_benchmark_oha() {
+    local output_file="$1"
+    log_info "Running oha: ${CONNECTIONS} connections, ${RATE} RPS, ${DURATION}s"
+
+    oha \
+        -z "${DURATION}s" \
+        -c "$CONNECTIONS" \
+        -q "$RATE" \
+        --no-tui \
+        "$TARGET/" 2>&1 | tee "$output_file"
+}
+
+run_benchmark_wrk2() {
+    local output_file="$1"
+    log_info "Running wrk2: ${THREADS} threads, ${CONNECTIONS} connections, ${RATE} RPS, ${DURATION}s"
+
+    wrk2 \
+        -t"$THREADS" \
+        -c"$CONNECTIONS" \
+        -d"${DURATION}s" \
+        -R"$RATE" \
+        --latency \
+        "$TARGET/" 2>&1 | tee "$output_file"
+}
+
+run_benchmark_wrk() {
+    local output_file="$1"
+    log_info "Running wrk: ${THREADS} threads, ${CONNECTIONS} connections, ${DURATION}s"
+
+    wrk \
+        -t"$THREADS" \
+        -c"$CONNECTIONS" \
+        -d"${DURATION}s" \
+        --latency \
+        "$TARGET/" 2>&1 | tee "$output_file"
+}
+
+run_benchmark_hey() {
+    local output_file="$1"
+    log_info "Running hey: ${CONNECTIONS} connections, ${RATE} RPS, ${DURATION}s"
+
+    hey \
+        -z "${DURATION}s" \
+        -c "$CONNECTIONS" \
+        -q "$((RATE / CONNECTIONS))" \
+        "$TARGET/" 2>&1 | tee "$output_file"
+}
+
+run_benchmark_k6() {
+    local output_file="$1"
+    log_info "Running k6: ${CONNECTIONS} VUs, ${DURATION}s"
+
+    k6 run --quiet \
+        -e TARGET="$TARGET" \
+        -e DURATION="${DURATION}s" \
+        -e VUS="$CONNECTIONS" \
+        --summary-export="$output_file.json" \
+        - <<'SCRIPT' 2>&1 | tee "$output_file"
+import http from 'k6/http';
+import { check } from 'k6';
+
+export const options = {
+    vus: __ENV.VUS ? parseInt(__ENV.VUS) : 100,
+    duration: __ENV.DURATION || '60s',
+};
+
+export default function () {
+    const res = http.get(__ENV.TARGET + '/');
+    check(res, { 'status is 200': (r) => r.status === 200 });
+}
+SCRIPT
+}
+
+run_single_benchmark() {
+    local proxy="$1"
+    local scenario="$2"
+    local run_num="$3"
+    local tool="$4"
+
+    local timestamp
+    timestamp=$(date +%Y%m%d_%H%M%S)
+    local result_dir="$RESULTS_DIR/${proxy}/${scenario}/${timestamp}"
+    mkdir -p "$result_dir"
+
+    local output_file="$result_dir/run_${run_num}.txt"
+
+    log_info "Run $run_num of $RUNS for $proxy ($scenario)"
+
+    case "$tool" in
+        oha)   run_benchmark_oha "$output_file" ;;
+        wrk2)  run_benchmark_wrk2 "$output_file" ;;
+        wrk)   run_benchmark_wrk "$output_file" ;;
+        hey)   run_benchmark_hey "$output_file" ;;
+        k6)    run_benchmark_k6 "$output_file" ;;
+    esac
+
+    echo "$result_dir"
+}
+
+collect_system_metrics() {
+    local output_file="$1"
+
+    {
+        echo "=== System Info ==="
+        uname -a
+        echo ""
+        echo "=== CPU Info ==="
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sysctl -n machdep.cpu.brand_string 2>/dev/null || echo "Unknown"
+            echo "Cores: $(sysctl -n hw.ncpu 2>/dev/null || echo 'Unknown')"
+        else
+            grep "model name" /proc/cpuinfo 2>/dev/null | head -1 || echo "Unknown"
+            echo "Cores: $(nproc 2>/dev/null || echo 'Unknown')"
+        fi
+        echo ""
+        echo "=== Memory ==="
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            vm_stat 2>/dev/null | head -5 || echo "Unknown"
+        else
+            free -h 2>/dev/null || echo "Unknown"
+        fi
+        echo ""
+        echo "=== Load Generator ==="
+        echo "Tool: $TOOL"
+    } > "$output_file"
+}
+
+run_benchmark() {
+    local proxy="$1"
+    local scenario="$2"
+
+    log_info "Starting benchmark: proxy=$proxy scenario=$scenario tool=$TOOL"
+
+    if ! check_proxy_running; then
+        log_error "Cannot reach proxy. Start it first with:"
+        log_error "  mise run up $proxy"
+        exit 1
+    fi
+
+    run_warmup "$TOOL"
+
+    local result_dir=""
+    for i in $(seq 1 "$RUNS"); do
+        result_dir=$(run_single_benchmark "$proxy" "$scenario" "$i" "$TOOL")
+
+        if [ "$i" -lt "$RUNS" ]; then
+            log_info "Cooling down for 5s..."
+            sleep 5
+        fi
+    done
+
+    collect_system_metrics "$result_dir/system_info.txt"
+
+    cat > "$result_dir/params.json" <<EOF
+{
+    "proxy": "$proxy",
+    "scenario": "$scenario",
+    "tool": "$TOOL",
+    "duration": $DURATION,
+    "connections": $CONNECTIONS,
+    "threads": $THREADS,
+    "rate": $RATE,
+    "warmup": $WARMUP,
+    "runs": $RUNS,
+    "target": "$TARGET",
+    "timestamp": "$(date -Iseconds)"
+}
+EOF
+
+    log_success "Benchmark complete. Results in: $result_dir"
+}
+
+run_all_proxies() {
+    local scenario="$1"
+    local proxies=("sentinel" "envoy" "haproxy" "nginx")
+
+    log_info "Running comparison benchmark for all proxies"
+
+    for proxy in "${proxies[@]}"; do
+        log_info "=== Testing $proxy ==="
+
+        log_info "Starting $proxy..."
+        docker compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile "$proxy" up -d
+        sleep 5
+
+        run_benchmark "$proxy" "$scenario"
+
+        log_info "Stopping $proxy..."
+        docker compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile "$proxy" down
+
+        log_info "Cooling down for 10s..."
+        sleep 10
+    done
+
+    log_success "All benchmarks complete"
+}
+
+# =============================================================================
+# Parse Arguments
+# =============================================================================
+
+PROXY=""
+SCENARIO=""
+TOOL=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --duration)    DURATION="$2"; shift 2 ;;
+        --connections) CONNECTIONS="$2"; shift 2 ;;
+        --threads)     THREADS="$2"; shift 2 ;;
+        --rate)        RATE="$2"; shift 2 ;;
+        --warmup)      WARMUP="$2"; shift 2 ;;
+        --runs)        RUNS="$2"; shift 2 ;;
+        --target)      TARGET="$2"; shift 2 ;;
+        --tool)        TOOL="$2"; shift 2 ;;
+        --help|-h)     usage ;;
+        -*)            log_error "Unknown option: $1"; usage ;;
+        *)
+            if [ -z "$PROXY" ]; then
+                PROXY="$1"
+            elif [ -z "$SCENARIO" ]; then
+                SCENARIO="$1"
+            fi
+            shift
+            ;;
+    esac
+done
+
+if [ -z "$PROXY" ] || [ -z "$SCENARIO" ]; then
+    log_error "Missing required arguments: proxy and scenario"
+    usage
+fi
+
+# Auto-detect tool if not specified
+if [ -z "$TOOL" ]; then
+    TOOL=$(detect_tool)
+fi
+
+mkdir -p "$RESULTS_DIR"
+
+if [ "$PROXY" = "all" ]; then
+    run_all_proxies "$SCENARIO"
+else
+    run_benchmark "$PROXY" "$SCENARIO"
+fi
