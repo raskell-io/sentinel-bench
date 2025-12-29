@@ -1,0 +1,32 @@
+{
+  "tool": "wrk",
+  "latency": {
+    "avg_ms": 15.79,
+    "stdev_ms": 2.81,
+    "max_ms": 51.61,
+    "percentiles": {
+      "p50_ms": 15.72,
+      "p75_ms": 17.27,
+      "p90_ms": 18.78,
+      "p99_ms": 23.52
+    }
+  },
+  "throughput": {
+    "requests_per_sec": 6332.40,
+    "transfer_per_sec": "83.87MB",
+    "avg_rps_per_thread": 1590.00,
+    "stdev_rps": 140.64,
+    "max_rps_per_thread": 1860.00
+  },
+  "summary": {
+    "total_requests": 380359,
+    "duration_seconds": 1.00m,
+    "data_read": "4.92GB"
+  },
+  "errors": {
+    "connect": 0,
+    "read": 0,
+    "write": 0,
+    "timeout": 0
+  }
+}
