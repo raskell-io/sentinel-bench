@@ -33,12 +33,7 @@ routes {
 
 upstreams {
     upstream "backend" {
-        targets {
-            target {
-                address "backend:8080"
-                weight 1
-            }
-        }
+        target "backend:8080" weight=1
         load-balancing "round_robin"
         // Health checks disabled for benchmarking
         connection-pool {
@@ -59,7 +54,7 @@ limits {
 
 observability {
     metrics {
-        enabled true
+        enabled "true"
         address "0.0.0.0:9090"
         path "/metrics"
     }
@@ -67,7 +62,7 @@ observability {
         level "warn"  // Minimal logging for benchmarks
         format "json"
         access-log {
-            enabled false  // CRITICAL: Disable access logging
+            enabled "false"  // CRITICAL: Disable access logging
         }
     }
 }
