@@ -15,6 +15,9 @@ BENCH_TARGET = "http://localhost:8080"
 # =============================================================================
 
 [tools]
+# Container runtime
+podman = "latest"       # Container runtime (Docker alternative)
+
 # Load generators
 k6 = "latest"           # Grafana k6 - scriptable load testing
 hey = "latest"          # Simple HTTP load generator
@@ -62,16 +65,16 @@ done
 """
 
 [tasks.down]
-description = "Stop all Docker containers"
-run = "docker compose -f docker/docker-compose.yaml down"
+description = "Stop all containers"
+run = "podman compose -f docker/docker-compose.yaml down"
 
 [tasks.logs]
 description = "Show proxy logs"
-run = "docker compose -f docker/docker-compose.yaml logs -f"
+run = "podman compose -f docker/docker-compose.yaml logs -f"
 
 [tasks.ps]
 description = "Show running containers"
-run = "docker compose -f docker/docker-compose.yaml ps"
+run = "podman compose -f docker/docker-compose.yaml ps"
 
 [tasks.clean]
 description = "Clean up results and temporary files"
