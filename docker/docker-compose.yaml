@@ -53,7 +53,6 @@ services:
       - "9090:9090"
     volumes:
       - ../configs/sentinel:/etc/sentinel:ro
-    command: ["-c", "/etc/sentinel/passthrough.kdl"]
     networks:
       - bench-net
     depends_on:
