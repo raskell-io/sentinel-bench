@@ -1,0 +1,304 @@
+#!/usr/bin/env bash
+#MISE description="Generate comparison report from benchmark results"
+#MISE alias="cmp"
+
+set -eo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+RESULTS_DIR="$ROOT_DIR/results"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+usage() {
+    cat <<EOF
+Generate comparison report from benchmark results
+
+Usage: mise run compare [options]
+
+Options:
+  --latest <n>     Compare only the latest N results per proxy (default: all)
+  --scenario <s>   Filter by scenario (default: all)
+  --output <file>  Write markdown to file (default: stdout)
+  --json           Output JSON instead of markdown
+  --help           Show this help
+
+Examples:
+  mise run compare                      # Compare all results
+  mise run compare --latest 1           # Compare only the most recent run per proxy
+  mise run compare --scenario passthrough --output report.md
+EOF
+    exit 0
+}
+
+# Parse arguments
+LATEST=""
+SCENARIO=""
+OUTPUT=""
+JSON_OUTPUT=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --latest)    LATEST="$2"; shift 2 ;;
+        --scenario)  SCENARIO="$2"; shift 2 ;;
+        --output)    OUTPUT="$2"; shift 2 ;;
+        --json)      JSON_OUTPUT=true; shift ;;
+        --help|-h)   usage ;;
+        *)           echo "Unknown option: $1"; usage ;;
+    esac
+done
+
+# Check for jq
+if ! command -v jq &>/dev/null; then
+    echo -e "${RED}Error: jq is required for comparison. Install with: brew install jq${NC}"
+    exit 1
+fi
+
+# Find all result directories
+find_results() {
+    local dirs=()
+
+    for dir in "$RESULTS_DIR"/2*; do
+        [[ -d "$dir" ]] || continue
+        [[ -f "$dir/metadata.json" ]] || continue
+
+        # Filter by scenario if specified
+        if [[ -n "$SCENARIO" ]]; then
+            local dir_scenario
+            dir_scenario=$(jq -r '.benchmark.scenario' "$dir/metadata.json" 2>/dev/null || echo "")
+            [[ "$dir_scenario" == "$SCENARIO" ]] || continue
+        fi
+
+        dirs+=("$dir")
+    done
+
+    # Sort by timestamp (newest first)
+    printf '%s\n' "${dirs[@]}" | sort -r
+}
+
+# Extract metrics from a result directory
+extract_metrics() {
+    local dir="$1"
+    local metadata="$dir/metadata.json"
+    local aggregated="$dir/aggregated.json"
+
+    local proxy scenario version timestamp
+    proxy=$(jq -r '.benchmark.proxy' "$metadata")
+    scenario=$(jq -r '.benchmark.scenario' "$metadata")
+    version=$(jq -r '.proxy_info.version' "$metadata")
+    timestamp=$(jq -r '.timestamp.start' "$metadata")
+
+    # Try to get aggregated results first
+    local rps p50 p99
+    if [[ -f "$aggregated" ]]; then
+        rps=$(jq -r '.throughput.avg_rps // 0' "$aggregated")
+        p50=$(jq -r '.latency.avg_p50_ms // 0' "$aggregated")
+        p99=$(jq -r '.latency.avg_p99_ms // 0' "$aggregated")
+    else
+        # Fall back to first run
+        local run_file="$dir/runs/run_1.json"
+        if [[ -f "$run_file" ]]; then
+            rps=$(jq -r '.throughput.requests_per_sec // 0' "$run_file")
+            p50=$(jq -r '.latency.percentiles.p50_ms // 0' "$run_file")
+            p99=$(jq -r '.latency.percentiles.p99_ms // 0' "$run_file")
+        else
+            rps="N/A"
+            p50="N/A"
+            p99="N/A"
+        fi
+    fi
+
+    echo "$proxy|$scenario|$version|$timestamp|$rps|$p50|$p99|$dir"
+}
+
+# Generate markdown comparison table
+generate_markdown() {
+    local results=("$@")
+
+    echo "# Benchmark Comparison Report"
+    echo ""
+    echo "Generated: $(date -Iseconds)"
+    echo ""
+
+    # Group by scenario
+    local scenarios
+    scenarios=$(printf '%s\n' "${results[@]}" | cut -d'|' -f2 | sort -u)
+
+    for scenario in $scenarios; do
+        echo "## Scenario: $scenario"
+        echo ""
+        echo "| Proxy | Version | RPS | p50 (ms) | p99 (ms) | Timestamp |"
+        echo "|-------|---------|----:|--------:|---------:|-----------|"
+
+        # Filter and sort by RPS (descending)
+        printf '%s\n' "${results[@]}" | grep "|$scenario|" | sort -t'|' -k5 -rn | while IFS='|' read -r proxy scn version ts rps p50 p99 dir; do
+            # Format numbers
+            if [[ "$rps" != "N/A" ]]; then
+                rps_fmt=$(printf "%.0f" "$rps" 2>/dev/null || echo "$rps")
+            else
+                rps_fmt="N/A"
+            fi
+
+            if [[ "$p50" != "N/A" ]]; then
+                p50_fmt=$(printf "%.2f" "$p50" 2>/dev/null || echo "$p50")
+            else
+                p50_fmt="N/A"
+            fi
+
+            if [[ "$p99" != "N/A" ]]; then
+                p99_fmt=$(printf "%.2f" "$p99" 2>/dev/null || echo "$p99")
+            else
+                p99_fmt="N/A"
+            fi
+
+            # Extract just the date part
+            ts_short=$(echo "$ts" | cut -dT -f1)
+
+            echo "| **$proxy** | $version | $rps_fmt | $p50_fmt | $p99_fmt | $ts_short |"
+        done
+
+        echo ""
+    done
+
+    # Summary section
+    echo "## Summary"
+    echo ""
+
+    # Find best performer per scenario
+    for scenario in $scenarios; do
+        local best
+        best=$(printf '%s\n' "${results[@]}" | grep "|$scenario|" | sort -t'|' -k5 -rn | head -1)
+        if [[ -n "$best" ]]; then
+            local best_proxy best_rps
+            best_proxy=$(echo "$best" | cut -d'|' -f1)
+            best_rps=$(echo "$best" | cut -d'|' -f5)
+            best_rps_fmt=$(printf "%.0f" "$best_rps" 2>/dev/null || echo "$best_rps")
+            echo "- **$scenario**: $best_proxy leads with $best_rps_fmt RPS"
+        fi
+    done
+
+    echo ""
+    echo "---"
+    echo "*Note: Results may vary based on hardware, container runtime, and system load.*"
+}
+
+# Generate JSON output
+generate_json() {
+    local results=("$@")
+
+    echo "{"
+    echo '  "generated": "'$(date -Iseconds)'",'
+    echo '  "results": ['
+
+    local first=true
+    for result in "${results[@]}"; do
+        IFS='|' read -r proxy scenario version ts rps p50 p99 dir <<< "$result"
+
+        [[ "$first" == "true" ]] || echo ","
+        first=false
+
+        cat <<EOF
+    {
+      "proxy": "$proxy",
+      "scenario": "$scenario",
+      "version": "$version",
+      "timestamp": "$ts",
+      "metrics": {
+        "rps": $rps,
+        "p50_ms": $p50,
+        "p99_ms": $p99
+      },
+      "result_dir": "$dir"
+    }
+EOF
+    done
+
+    echo ""
+    echo "  ]"
+    echo "}"
+}
+
+# Main
+main() {
+    # Find all result directories
+    local result_dirs_str
+    result_dirs_str=$(find_results)
+
+    if [[ -z "$result_dirs_str" ]]; then
+        echo -e "${YELLOW}No benchmark results found in $RESULTS_DIR${NC}"
+        echo ""
+        echo "Run some benchmarks first:"
+        echo "  mise run bench:envoy"
+        echo "  mise run bench:sentinel"
+        echo "  mise run bench:all"
+        exit 0
+    fi
+
+    # Convert to array
+    local result_dirs=()
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && result_dirs+=("$line")
+    done <<< "$result_dirs_str"
+
+    # Filter to latest N per proxy if specified
+    if [[ -n "$LATEST" ]]; then
+        local filtered=()
+        local seen_counts=""
+
+        for dir in "${result_dirs[@]}"; do
+            local proxy
+            proxy=$(jq -r '.benchmark.proxy' "$dir/metadata.json" 2>/dev/null)
+
+            # Count occurrences in seen_counts
+            local count
+            count=$(echo "$seen_counts" | grep -c "^${proxy}$" || echo "0")
+
+            if [[ $count -lt $LATEST ]]; then
+                filtered+=("$dir")
+                seen_counts="$seen_counts
+$proxy"
+            fi
+        done
+
+        result_dirs=("${filtered[@]}")
+    fi
+
+    # Extract metrics from each result
+    local all_results=()
+    for dir in "${result_dirs[@]}"; do
+        local metrics
+        metrics=$(extract_metrics "$dir")
+        all_results+=("$metrics")
+    done
+
+    if [[ ${#all_results[@]} -eq 0 ]]; then
+        echo -e "${YELLOW}No valid results found${NC}"
+        exit 0
+    fi
+
+    # Generate output
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+        if [[ -n "$OUTPUT" ]]; then
+            generate_json "${all_results[@]}" > "$OUTPUT"
+            echo -e "${GREEN}JSON report written to: $OUTPUT${NC}"
+        else
+            generate_json "${all_results[@]}"
+        fi
+    else
+        if [[ -n "$OUTPUT" ]]; then
+            generate_markdown "${all_results[@]}" > "$OUTPUT"
+            echo -e "${GREEN}Markdown report written to: $OUTPUT${NC}"
+        else
+            generate_markdown "${all_results[@]}"
+        fi
+    fi
+}
+
+main

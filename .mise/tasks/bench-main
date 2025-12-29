@@ -33,10 +33,10 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
-log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
-log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+log_info() { echo -e "${BLUE}[INFO]${NC} $1" >&2; }
+log_success() { echo -e "${GREEN}[OK]${NC} $1" >&2; }
+log_warn() { echo -e "${YELLOW}[WARN]${NC} $1" >&2; }
+log_error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 
 usage() {
     cat <<EOF
@@ -179,20 +179,22 @@ get_tool_version() {
             version=$(oha --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "unknown")
             ;;
         wrk2)
-            version=$(wrk2 --version 2>/dev/null | head -1 || echo "unknown")
+            version=$(wrk2 --version 2>/dev/null | head -1 | tr -d '\n' || echo "unknown")
             ;;
         wrk)
-            version=$(wrk --version 2>/dev/null | head -1 || echo "unknown")
+            # wrk outputs version info on first line like "wrk 4.2.0 [kqueue]"
+            version=$(wrk --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
             ;;
         hey)
-            version=$(hey --version 2>/dev/null || echo "unknown")
+            version=$(hey --version 2>/dev/null | head -1 | tr -d '\n' || echo "unknown")
             ;;
         k6)
-            version=$(k6 version 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
+            version=$(k6 version 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "unknown")
             ;;
     esac
 
-    echo "$version"
+    # Ensure single line, no control characters
+    echo "$version" | tr -d '\n\r' | head -c 100
 }
 
 # =============================================================================
@@ -302,8 +304,8 @@ run_benchmark_wrk2() {
         --latency \
         "$TARGET/" 2>&1 | tee "$output_file"
 
-    # wrk2 doesn't have native JSON, create a placeholder
-    echo '{"tool": "wrk2", "note": "Parse from txt output"}' > "$json_file"
+    # Parse wrk2 output (similar format to wrk)
+    parse_wrk_output "$output_file" "$json_file"
 }
 
 run_benchmark_wrk() {
@@ -311,14 +313,157 @@ run_benchmark_wrk() {
     local json_file="$2"
     log_info "Running wrk: ${THREADS} threads, ${CONNECTIONS} connections, ${DURATION}s"
 
-    wrk \
+    # Debug: check if wrk is available
+    local wrk_path
+    wrk_path=$(command -v wrk 2>/dev/null || echo "")
+    if [[ -z "$wrk_path" ]]; then
+        log_error "wrk not found in PATH"
+        log_error "PATH: $PATH"
+        return 1
+    fi
+    log_info "Using wrk at: $wrk_path"
+
+    "$wrk_path" \
         -t"$THREADS" \
         -c"$CONNECTIONS" \
         -d"${DURATION}s" \
         --latency \
         "$TARGET/" 2>&1 | tee "$output_file"
 
-    echo '{"tool": "wrk", "note": "Parse from txt output"}' > "$json_file"
+    # Parse wrk output to JSON
+    parse_wrk_output "$output_file" "$json_file"
+}
+
+# Convert latency values to milliseconds (handle us, ms, s suffixes)
+_convert_to_ms() {
+    local val="$1"
+    if [[ -z "$val" ]]; then
+        echo "0"
+    elif [[ "$val" == *"us" ]]; then
+        echo "scale=3; ${val%us} / 1000" | bc 2>/dev/null || echo "0"
+    elif [[ "$val" == *"ms" ]]; then
+        echo "${val%ms}"
+    elif [[ "$val" == *"s" && "$val" != *"ms" ]]; then
+        echo "scale=3; ${val%s} * 1000" | bc 2>/dev/null || echo "0"
+    else
+        echo "$val"
+    fi
+}
+
+# Convert RPS values (handle k suffix)
+_convert_rps() {
+    local val="$1"
+    if [[ -z "$val" ]]; then
+        echo "0"
+    elif [[ "$val" == *"k" ]]; then
+        echo "scale=2; ${val%k} * 1000" | bc 2>/dev/null || echo "0"
+    else
+        echo "$val"
+    fi
+}
+
+# Parse wrk text output to structured JSON
+parse_wrk_output() {
+    local input_file="$1"
+    local output_file="$2"
+
+    local content
+    content=$(cat "$input_file")
+
+    # Extract latency stats (Avg, Stdev, Max) - from "Latency" line in Thread Stats
+    local lat_avg lat_stdev lat_max
+    lat_avg=$(echo "$content" | grep "Latency" | head -1 | awk '{print $2}')
+    lat_stdev=$(echo "$content" | grep "Latency" | head -1 | awk '{print $3}')
+    lat_max=$(echo "$content" | grep "Latency" | head -1 | awk '{print $4}')
+
+    # Extract RPS stats - from "Req/Sec" line in Thread Stats
+    local rps_avg rps_stdev rps_max
+    rps_avg=$(echo "$content" | grep "Req/Sec" | head -1 | awk '{print $2}')
+    rps_stdev=$(echo "$content" | grep "Req/Sec" | head -1 | awk '{print $3}')
+    rps_max=$(echo "$content" | grep "Req/Sec" | head -1 | awk '{print $4}')
+
+    # Extract percentiles from "Latency Distribution" section
+    # These lines look like: "     50%    7.46ms"
+    local p50 p75 p90 p99
+    p50=$(echo "$content" | grep -E "^\s+50%" | awk '{print $2}')
+    p75=$(echo "$content" | grep -E "^\s+75%" | awk '{print $2}')
+    p90=$(echo "$content" | grep -E "^\s+90%" | awk '{print $2}')
+    p99=$(echo "$content" | grep -E "^\s+99%" | awk '{print $2}')
+
+    # Extract summary stats from line like "130197 requests in 10.00s, 1.67GB read"
+    local total_requests duration_actual data_read
+    total_requests=$(echo "$content" | grep "requests in" | awk '{print $1}')
+    duration_actual=$(echo "$content" | grep "requests in" | awk '{print $4}' | tr -d ',s')
+    data_read=$(echo "$content" | grep "requests in" | awk '{print $5}')
+
+    # Extract final RPS and transfer rate
+    local requests_per_sec transfer_per_sec
+    requests_per_sec=$(echo "$content" | grep "Requests/sec:" | awk '{print $2}')
+    transfer_per_sec=$(echo "$content" | grep "Transfer/sec:" | awk '{print $2}')
+
+    # Extract errors if any (line like "Socket errors: connect 0, read 0, write 0, timeout 0")
+    local socket_errors read_errors write_errors timeout_errors
+    if echo "$content" | grep -q "Socket errors:"; then
+        socket_errors=$(echo "$content" | grep "Socket errors:" | sed 's/.*connect \([0-9]*\).*/\1/')
+        read_errors=$(echo "$content" | grep "Socket errors:" | sed 's/.*read \([0-9]*\).*/\1/')
+        write_errors=$(echo "$content" | grep "Socket errors:" | sed 's/.*write \([0-9]*\).*/\1/')
+        timeout_errors=$(echo "$content" | grep "Socket errors:" | sed 's/.*timeout \([0-9]*\).*/\1/')
+    else
+        socket_errors=0
+        read_errors=0
+        write_errors=0
+        timeout_errors=0
+    fi
+
+    # Convert values
+    local lat_avg_ms lat_stdev_ms lat_max_ms p50_ms p75_ms p90_ms p99_ms
+    lat_avg_ms=$(_convert_to_ms "$lat_avg")
+    lat_stdev_ms=$(_convert_to_ms "$lat_stdev")
+    lat_max_ms=$(_convert_to_ms "$lat_max")
+    p50_ms=$(_convert_to_ms "$p50")
+    p75_ms=$(_convert_to_ms "$p75")
+    p90_ms=$(_convert_to_ms "$p90")
+    p99_ms=$(_convert_to_ms "$p99")
+
+    local rps_avg_converted rps_stdev_converted rps_max_converted
+    rps_avg_converted=$(_convert_rps "$rps_avg")
+    rps_stdev_converted=$(_convert_rps "$rps_stdev")
+    rps_max_converted=$(_convert_rps "$rps_max")
+
+    cat > "$output_file" <<EOF
+{
+  "tool": "wrk",
+  "latency": {
+    "avg_ms": ${lat_avg_ms:-0},
+    "stdev_ms": ${lat_stdev_ms:-0},
+    "max_ms": ${lat_max_ms:-0},
+    "percentiles": {
+      "p50_ms": ${p50_ms:-0},
+      "p75_ms": ${p75_ms:-0},
+      "p90_ms": ${p90_ms:-0},
+      "p99_ms": ${p99_ms:-0}
+    }
+  },
+  "throughput": {
+    "requests_per_sec": ${requests_per_sec:-0},
+    "transfer_per_sec": "${transfer_per_sec:-0}",
+    "avg_rps_per_thread": ${rps_avg_converted:-0},
+    "stdev_rps": ${rps_stdev_converted:-0},
+    "max_rps_per_thread": ${rps_max_converted:-0}
+  },
+  "summary": {
+    "total_requests": ${total_requests:-0},
+    "duration_seconds": ${duration_actual:-0},
+    "data_read": "${data_read:-0}"
+  },
+  "errors": {
+    "connect": ${socket_errors:-0},
+    "read": ${read_errors:-0},
+    "write": ${write_errors:-0},
+    "timeout": ${timeout_errors:-0}
+  }
+}
+EOF
 }
 
 run_benchmark_hey() {
@@ -359,6 +504,52 @@ export default function () {
     check(res, { 'status is 200': (r) => r.status === 200 });
 }
 SCRIPT
+}
+
+# =============================================================================
+# Results Aggregation
+# =============================================================================
+
+aggregate_results() {
+    local result_dir="$1"
+    local runs_dir="$result_dir/runs"
+
+    # Skip if no JSON files exist
+    if ! ls "$runs_dir"/run_*.json &>/dev/null; then
+        log_warn "No run data files found to aggregate"
+        return
+    fi
+
+    # Use jq if available for proper JSON parsing, otherwise use basic averaging
+    if command -v jq &>/dev/null; then
+        # Aggregate using jq
+        local rps_values p50_values p99_values
+        rps_values=$(jq -s '[.[].throughput.requests_per_sec] | add / length' "$runs_dir"/run_*.json 2>/dev/null || echo "0")
+        p50_values=$(jq -s '[.[].latency.percentiles.p50_ms] | add / length' "$runs_dir"/run_*.json 2>/dev/null || echo "0")
+        p99_values=$(jq -s '[.[].latency.percentiles.p99_ms] | add / length' "$runs_dir"/run_*.json 2>/dev/null || echo "0")
+
+        # Get min/max RPS
+        local rps_min rps_max
+        rps_min=$(jq -s '[.[].throughput.requests_per_sec] | min' "$runs_dir"/run_*.json 2>/dev/null || echo "0")
+        rps_max=$(jq -s '[.[].throughput.requests_per_sec] | max' "$runs_dir"/run_*.json 2>/dev/null || echo "0")
+
+        cat > "$result_dir/aggregated.json" <<EOF
+{
+  "runs_count": $RUNS,
+  "throughput": {
+    "avg_rps": $rps_values,
+    "min_rps": $rps_min,
+    "max_rps": $rps_max
+  },
+  "latency": {
+    "avg_p50_ms": $p50_values,
+    "avg_p99_ms": $p99_values
+  }
+}
+EOF
+    else
+        log_warn "jq not found, skipping aggregation"
+    fi
 }
 
 # =============================================================================
@@ -547,6 +738,9 @@ run_benchmark() {
 
     local end_time
     end_time=$(date -Iseconds)
+
+    # Aggregate results from all runs
+    aggregate_results "$result_dir"
 
     # Generate metadata and summary
     generate_metadata "$result_dir" "$proxy" "$scenario" "$start_time" "$end_time"
