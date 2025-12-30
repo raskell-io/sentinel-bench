@@ -273,22 +273,30 @@ run_benchmark_oha() {
     local json_file="$2"
     log_info "Running oha: ${CONNECTIONS} connections, ${RATE} RPS, ${DURATION}s"
 
-    # Run with JSON output for machine parsing
+    # Run with JSON output and save
     oha \
         -z "${DURATION}s" \
         -c "$CONNECTIONS" \
         -q "$RATE" \
         --no-tui \
-        -j \
+        --latency-correction \
+        --output-format json \
         "$TARGET/" > "$json_file" 2>&1
 
-    # Also capture human-readable output
-    oha \
-        -z "${DURATION}s" \
-        -c "$CONNECTIONS" \
-        -q "$RATE" \
-        --no-tui \
-        "$TARGET/" 2>&1 | tee "$output_file"
+    # Display summary from JSON
+    if [[ -f "$json_file" ]] && command -v jq &>/dev/null; then
+        local rps p50 p99
+        rps=$(jq -r '.summary.requestsPerSec // .summary.requests_per_sec // 0' "$json_file" 2>/dev/null)
+        p50=$(jq -r '.latencyPercentiles.p50 // .responseTimePercentiles.p50 // 0' "$json_file" 2>/dev/null)
+        p99=$(jq -r '.latencyPercentiles.p99 // .responseTimePercentiles.p99 // 0' "$json_file" 2>/dev/null)
+        echo "Results: ${rps} req/s, p50=${p50}ms, p99=${p99}ms"
+
+        # Save text summary
+        jq -r '"Summary:\n  Requests/sec: \(.summary.requestsPerSec // .summary.requests_per_sec // 0)\n  Total requests: \(.summary.total // 0)\n  Latency p50: \(.latencyPercentiles.p50 // .responseTimePercentiles.p50 // 0)ms\n  Latency p99: \(.latencyPercentiles.p99 // .responseTimePercentiles.p99 // 0)ms"' "$json_file" > "$output_file" 2>/dev/null || cp "$json_file" "$output_file"
+    else
+        echo "JSON output saved to $json_file"
+        cp "$json_file" "$output_file"
+    fi
 }
 
 run_benchmark_wrk2() {
@@ -530,20 +538,37 @@ aggregate_results() {
         return
     fi
 
-    # Use jq if available for proper JSON parsing, otherwise use basic averaging
-    if command -v jq &>/dev/null; then
-        # Aggregate using jq
-        local rps_values p50_values p99_values
+    # Use jq if available for proper JSON parsing
+    if ! command -v jq &>/dev/null; then
+        log_warn "jq not found, skipping aggregation"
+        return
+    fi
+
+    # Detect format: oha uses "summary.requestsPerSec", wrk uses "throughput.requests_per_sec"
+    local first_file
+    first_file=$(ls "$runs_dir"/run_*.json 2>/dev/null | head -1)
+    local is_oha
+    is_oha=$(jq -r 'if .summary.requestsPerSec then "yes" else "no" end' "$first_file" 2>/dev/null || echo "no")
+
+    local rps_values p50_values p99_values rps_min rps_max
+
+    if [[ "$is_oha" == "yes" ]]; then
+        # oha format: latency in seconds, need to convert to ms
+        rps_values=$(jq -s '[.[].summary.requestsPerSec] | add / length' "$runs_dir"/run_*.json 2>/dev/null || echo "0")
+        p50_values=$(jq -s '[.[].latencyPercentiles.p50 * 1000] | add / length' "$runs_dir"/run_*.json 2>/dev/null || echo "0")
+        p99_values=$(jq -s '[.[].latencyPercentiles.p99 * 1000] | add / length' "$runs_dir"/run_*.json 2>/dev/null || echo "0")
+        rps_min=$(jq -s '[.[].summary.requestsPerSec] | min' "$runs_dir"/run_*.json 2>/dev/null || echo "0")
+        rps_max=$(jq -s '[.[].summary.requestsPerSec] | max' "$runs_dir"/run_*.json 2>/dev/null || echo "0")
+    else
+        # wrk format: latency already in ms
         rps_values=$(jq -s '[.[].throughput.requests_per_sec] | add / length' "$runs_dir"/run_*.json 2>/dev/null || echo "0")
         p50_values=$(jq -s '[.[].latency.percentiles.p50_ms] | add / length' "$runs_dir"/run_*.json 2>/dev/null || echo "0")
         p99_values=$(jq -s '[.[].latency.percentiles.p99_ms] | add / length' "$runs_dir"/run_*.json 2>/dev/null || echo "0")
-
-        # Get min/max RPS
-        local rps_min rps_max
         rps_min=$(jq -s '[.[].throughput.requests_per_sec] | min' "$runs_dir"/run_*.json 2>/dev/null || echo "0")
         rps_max=$(jq -s '[.[].throughput.requests_per_sec] | max' "$runs_dir"/run_*.json 2>/dev/null || echo "0")
+    fi
 
-        cat > "$result_dir/aggregated.json" <<EOF
+    cat > "$result_dir/aggregated.json" <<EOF
 {
   "runs_count": $RUNS,
   "throughput": {
@@ -557,9 +582,6 @@ aggregate_results() {
   }
 }
 EOF
-    else
-        log_warn "jq not found, skipping aggregation"
-    fi
 }
 
 # =============================================================================

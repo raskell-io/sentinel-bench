@@ -102,12 +102,24 @@ extract_metrics() {
         p50=$(jq -r '.latency.avg_p50_ms // 0' "$aggregated")
         p99=$(jq -r '.latency.avg_p99_ms // 0' "$aggregated")
     else
-        # Fall back to first run
+        # Fall back to first run - detect format (oha vs wrk)
         local run_file="$dir/runs/run_1.json"
         if [[ -f "$run_file" ]]; then
-            rps=$(jq -r '.throughput.requests_per_sec // 0' "$run_file")
-            p50=$(jq -r '.latency.percentiles.p50_ms // 0' "$run_file")
-            p99=$(jq -r '.latency.percentiles.p99_ms // 0' "$run_file")
+            # Check if oha format (has summary.requestsPerSec)
+            local is_oha
+            is_oha=$(jq -r 'if .summary.requestsPerSec then "yes" else "no" end' "$run_file" 2>/dev/null || echo "no")
+
+            if [[ "$is_oha" == "yes" ]]; then
+                # oha format: latency in seconds, convert to ms
+                rps=$(jq -r '.summary.requestsPerSec // 0' "$run_file")
+                p50=$(jq -r '(.latencyPercentiles.p50 // 0) * 1000' "$run_file")
+                p99=$(jq -r '(.latencyPercentiles.p99 // 0) * 1000' "$run_file")
+            else
+                # wrk format
+                rps=$(jq -r '.throughput.requests_per_sec // 0' "$run_file")
+                p50=$(jq -r '.latency.percentiles.p50_ms // 0' "$run_file")
+                p99=$(jq -r '.latency.percentiles.p99_ms // 0' "$run_file")
+            fi
         else
             rps="N/A"
             p50="N/A"
