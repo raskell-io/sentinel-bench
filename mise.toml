@@ -2,6 +2,10 @@
 # mise configuration for task running and dependency management
 
 [env]
+# Sentinel image (override with local builds)
+# SENTINEL_IMAGE = "sentinel:25.12_17"  # Uncomment to use local build
+SENTINEL_IMAGE = "ghcr.io/raskell-io/sentinel:latest"
+
 # Default benchmark settings (can be overridden)
 BENCH_DURATION = "60"
 BENCH_CONNECTIONS = "100"
