@@ -1,0 +1,5 @@
+Summary:
+  Requests/sec: 19.999095610231226
+  Total requests: 60.002713292
+  Latency p50: 0ms
+  Latency p99: 0ms

@@ -89,11 +89,13 @@ extract_metrics() {
     local metadata="$dir/metadata.json"
     local aggregated="$dir/aggregated.json"
 
-    local proxy scenario version timestamp
+    local proxy scenario version timestamp arch image
     proxy=$(jq -r '.benchmark.proxy' "$metadata")
     scenario=$(jq -r '.benchmark.scenario' "$metadata")
     version=$(jq -r '.proxy_info.version' "$metadata")
     timestamp=$(jq -r '.timestamp.start' "$metadata")
+    arch=$(jq -r '.proxy_info.architecture // "unknown"' "$metadata")
+    image=$(jq -r '.proxy_info.image // "unknown"' "$metadata")
 
     # Try to get aggregated results first
     local rps p50 p99
@@ -127,7 +129,7 @@ extract_metrics() {
         fi
     fi
 
-    echo "$proxy|$scenario|$version|$timestamp|$rps|$p50|$p99|$dir"
+    echo "$proxy|$scenario|$version|$arch|$image|$timestamp|$rps|$p50|$p99|$dir"
 }
 
 # Generate markdown comparison table
@@ -146,11 +148,11 @@ generate_markdown() {
     for scenario in $scenarios; do
         echo "## Scenario: $scenario"
         echo ""
-        echo "| Proxy | Version | RPS | p50 (ms) | p99 (ms) | Timestamp |"
-        echo "|-------|---------|----:|--------:|---------:|-----------|"
+        echo "| Proxy | Arch | Image | Version | RPS | p50 (ms) | p99 (ms) | Timestamp |"
+        echo "|-------|------|-------|---------|----:|--------:|---------:|-----------|"
 
-        # Filter and sort by RPS (descending)
-        printf '%s\n' "${results[@]}" | grep "|$scenario|" | sort -t'|' -k5 -rn | while IFS='|' read -r proxy scn version ts rps p50 p99 dir; do
+        # Filter and sort by RPS (descending) - fields: proxy|scenario|version|arch|image|timestamp|rps|p50|p99|dir
+        printf '%s\n' "${results[@]}" | grep "|$scenario|" | sort -t'|' -k7 -rn | while IFS='|' read -r proxy scn version arch image ts rps p50 p99 dir; do
             # Format numbers
             if [[ "$rps" != "N/A" ]]; then
                 rps_fmt=$(printf "%.0f" "$rps" 2>/dev/null || echo "$rps")
@@ -173,7 +175,7 @@ generate_markdown() {
             # Extract just the date part
             ts_short=$(echo "$ts" | cut -dT -f1)
 
-            echo "| **$proxy** | $version | $rps_fmt | $p50_fmt | $p99_fmt | $ts_short |"
+            echo "| **$proxy** | $arch | $image | $version | $rps_fmt | $p50_fmt | $p99_fmt | $ts_short |"
         done
 
         echo ""
@@ -183,14 +185,14 @@ generate_markdown() {
     echo "## Summary"
     echo ""
 
-    # Find best performer per scenario
+    # Find best performer per scenario (rps is now field 7)
     for scenario in $scenarios; do
         local best
-        best=$(printf '%s\n' "${results[@]}" | grep "|$scenario|" | sort -t'|' -k5 -rn | head -1)
+        best=$(printf '%s\n' "${results[@]}" | grep "|$scenario|" | sort -t'|' -k7 -rn | head -1)
         if [[ -n "$best" ]]; then
             local best_proxy best_rps
             best_proxy=$(echo "$best" | cut -d'|' -f1)
-            best_rps=$(echo "$best" | cut -d'|' -f5)
+            best_rps=$(echo "$best" | cut -d'|' -f7)
             best_rps_fmt=$(printf "%.0f" "$best_rps" 2>/dev/null || echo "$best_rps")
             echo "- **$scenario**: $best_proxy leads with $best_rps_fmt RPS"
         fi
@@ -211,7 +213,7 @@ generate_json() {
 
     local first=true
     for result in "${results[@]}"; do
-        IFS='|' read -r proxy scenario version ts rps p50 p99 dir <<< "$result"
+        IFS='|' read -r proxy scenario version arch image ts rps p50 p99 dir <<< "$result"
 
         [[ "$first" == "true" ]] || echo ","
         first=false
@@ -221,6 +223,8 @@ generate_json() {
       "proxy": "$proxy",
       "scenario": "$scenario",
       "version": "$version",
+      "architecture": "$arch",
+      "image": "$image",
       "timestamp": "$ts",
       "metrics": {
         "rps": $rps,

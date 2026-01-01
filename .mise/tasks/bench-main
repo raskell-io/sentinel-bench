@@ -31,6 +31,8 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
 NC='\033[0m'
 
 log_info() { echo -e "${BLUE}[INFO]${NC} $1" >&2; }
@@ -237,6 +239,45 @@ check_proxy_running() {
 
     log_success "Proxy is ready"
     return 0
+}
+
+# Display container details for verification
+show_container_info() {
+    local proxy="$1"
+    local container="bench-${proxy}"
+
+    echo ""
+    echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║${NC}  ${BOLD}Container Details${NC}"
+    echo -e "${CYAN}╠══════════════════════════════════════════════════════════════╣${NC}"
+
+    # Get image name from running container
+    local image_name
+    image_name=$(docker inspect --format='{{.Config.Image}}' "$container" 2>/dev/null || echo "unknown")
+    echo -e "${CYAN}║${NC}  Image:        ${GREEN}${image_name}${NC}"
+
+    # Get image ID
+    local image_id
+    image_id=$(docker inspect --format='{{.Image}}' "$container" 2>/dev/null | cut -c8-19 || echo "unknown")
+    echo -e "${CYAN}║${NC}  Image ID:     ${image_id}"
+
+    # Get architecture from image (container .Platform only returns OS)
+    local arch
+    arch=$(docker image inspect --format='{{.Architecture}}' "$image_name" 2>/dev/null || echo "unknown")
+    echo -e "${CYAN}║${NC}  Architecture: ${YELLOW}${arch}${NC}"
+
+    # Get version from running container
+    local version
+    version=$(get_proxy_version "$proxy")
+    echo -e "${CYAN}║${NC}  Version:      ${version}"
+
+    # Get container status
+    local status
+    status=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null || echo "unknown")
+    echo -e "${CYAN}║${NC}  Status:       ${status}"
+
+    echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
 }
 
 # =============================================================================
@@ -595,10 +636,17 @@ generate_metadata() {
     local start_time="$4"
     local end_time="$5"
 
+    local container="bench-${proxy}"
     local proxy_version
     proxy_version=$(get_proxy_version "$proxy")
     local tool_version
     tool_version=$(get_tool_version "$TOOL")
+
+    # Get container image details
+    local image_name image_id image_arch
+    image_name=$(docker inspect --format='{{.Config.Image}}' "$container" 2>/dev/null || echo "unknown")
+    image_id=$(docker inspect --format='{{.Image}}' "$container" 2>/dev/null | cut -c8-19 || echo "unknown")
+    image_arch=$(docker image inspect --format='{{.Architecture}}' "$image_name" 2>/dev/null || echo "unknown")
 
     cat > "$result_dir/metadata.json" <<EOF
 {
@@ -618,7 +666,10 @@ generate_metadata() {
   "proxy_info": {
     "name": "$proxy",
     "version": "$proxy_version",
-    "container": "bench-${proxy}"
+    "container": "bench-${proxy}",
+    "image": "$image_name",
+    "image_id": "$image_id",
+    "architecture": "$image_arch"
   },
   "environment": {
     "hostname": "$(hostname)",
@@ -735,6 +786,9 @@ run_benchmark() {
         exit 1
     fi
 
+    # Show container details for verification
+    show_container_info "$proxy"
+
     # Create result directory with timestamp
     local timestamp
     timestamp=$(date +%Y%m%d_%H%M%S)
@@ -795,7 +849,9 @@ run_all_proxies() {
         log_info "=== Testing $proxy ==="
 
         log_info "Starting $proxy..."
-        docker-compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile "$proxy" up -d
+        # Use --force-recreate to ensure container uses current image (e.g., SENTINEL_IMAGE)
+        # Use --pull never for local builds (pull manually if you need registry updates)
+        docker-compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile "$proxy" up -d --force-recreate --pull never
         sleep 5
 
         run_benchmark "$proxy" "$scenario"

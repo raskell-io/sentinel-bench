@@ -44,7 +44,7 @@ services:
   # =============================================================================
   sentinel:
     image: ${SENTINEL_IMAGE:-ghcr.io/raskell-io/sentinel:latest}
-    platform: linux/amd64  # Emulate until arm64 build available
+    platform: ${SENTINEL_PLATFORM:-linux/amd64}  # Use linux/arm64 for local M-series builds
     container_name: bench-sentinel
     profiles:
       - sentinel

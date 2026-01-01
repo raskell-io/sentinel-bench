@@ -4,6 +4,7 @@
 [env]
 # Sentinel image - override by editing this or exporting SENTINEL_IMAGE before running
 # SENTINEL_IMAGE = "sentinel:25.12_17"  # uncomment for local builds
+# SENTINEL_PLATFORM = "linux/arm64"     # uncomment for local arm64 builds on M-series Macs
 
 # Default benchmark settings (can be overridden)
 BENCH_DURATION = "60"
@@ -62,6 +63,20 @@ for tool in oha wrk2 wrk hey k6 ab; do
         echo "  ✗ $tool: not found"
     fi
 done
+"""
+
+[tasks.pull]
+description = "Pull all proxy images from registries"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+echo "Pulling proxy images..."
+docker pull ghcr.io/raskell-io/sentinel:latest
+docker pull envoyproxy/envoy:v1.31-latest
+docker pull haproxy:2.9-alpine
+docker pull nginx:1.25-alpine
+docker pull mccutchen/go-httpbin:latest
+echo "Done. All images pulled."
 """
 
 [tasks.down]

@@ -1,0 +1,57 @@
+{
+  "schema_version": "1.0.0",
+  "id": "DC101DDE-F604-4E14-8384-08BC2BE2DE6C",
+  "timestamp": {
+    "start": "2025-12-30T09:42:48+01:00",
+    "end": "2025-12-30T09:46:09+01:00",
+    "timezone": "CET"
+  },
+  "benchmark": {
+    "proxy": "nginx",
+    "scenario": "passthrough",
+    "name": "",
+    "config_file": "configs/nginx/passthrough.kdl"
+  },
+  "proxy_info": {
+    "name": "nginx",
+    "version": "1.25.5",
+    "container": "bench-nginx",
+    "image": "nginx:1.25-alpine",
+    "image_id": "516475cc129d",
+    "architecture": "arm64"
+  },
+  "environment": {
+    "hostname": "Zaras-MacBook-Pro.local",
+    "machine_model": "Mac16,1",
+    "os": {
+      "name": "macOS",
+      "version": "15.6",
+      "kernel": "24.6.0"
+    },
+    "cpu": {
+      "model": "Apple M4",
+      "cores": 10,
+      "architecture": "arm64"
+    },
+    "memory_gb": 16,
+    "container_runtime": "Docker version 29.1.3, build f52814d454"
+  },
+  "test_parameters": {
+    "duration_seconds": 60,
+    "warmup_seconds": 10,
+    "connections": 100,
+    "threads": 4,
+    "target_rate": 10000,
+    "runs": 3,
+    "target_url": "http://localhost:8080"
+  },
+  "load_generator": {
+    "tool": "oha",
+    "version": "1.12.1"
+  },
+  "runs": [
+    {"run": 1, "output": "runs/run_1.txt", "data": "runs/run_1.json"},
+    {"run": 2, "output": "runs/run_2.txt", "data": "runs/run_2.json"},
+    {"run": 3, "output": "runs/run_3.txt", "data": "runs/run_3.json"}
+  ]
+}

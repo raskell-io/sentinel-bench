@@ -7,7 +7,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 echo "Starting Sentinel..."
-docker-compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile sentinel up -d
+# Use --force-recreate to ensure container uses the current SENTINEL_IMAGE
+# Use --pull never for local builds (pull manually if you need registry updates)
+docker-compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile sentinel up -d --force-recreate --pull never
 
 echo "Waiting for Sentinel to be ready..."
 for i in {1..30}; do

@@ -1,0 +1,12 @@
+{
+  "runs_count": 3,
+  "throughput": {
+    "avg_rps": 15.171506393300675,
+    "min_rps": 5.516373996271751,
+    "max_rps": 19.999125913203056
+  },
+  "latency": {
+    "avg_p50_ms": 0,
+    "avg_p99_ms": 0
+  }
+}

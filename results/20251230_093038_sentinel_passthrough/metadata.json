@@ -1,0 +1,57 @@
+{
+  "schema_version": "1.0.0",
+  "id": "A99B1F46-38DA-48AA-A6E2-67384BE06D9A",
+  "timestamp": {
+    "start": "2025-12-30T09:30:38+01:00",
+    "end": "2025-12-30T09:33:58+01:00",
+    "timezone": "CET"
+  },
+  "benchmark": {
+    "proxy": "sentinel",
+    "scenario": "passthrough",
+    "name": "",
+    "config_file": "configs/sentinel/passthrough.kdl"
+  },
+  "proxy_info": {
+    "name": "sentinel",
+    "version": "sentinel 0.1.7 (release dev, commit unknown)",
+    "container": "bench-sentinel",
+    "image": "sentinel:25.12_18",
+    "image_id": "ee76fbac14c7",
+    "architecture": "arm64"
+  },
+  "environment": {
+    "hostname": "Zaras-MacBook-Pro.local",
+    "machine_model": "Mac16,1",
+    "os": {
+      "name": "macOS",
+      "version": "15.6",
+      "kernel": "24.6.0"
+    },
+    "cpu": {
+      "model": "Apple M4",
+      "cores": 10,
+      "architecture": "arm64"
+    },
+    "memory_gb": 16,
+    "container_runtime": "Docker version 29.1.3, build f52814d454"
+  },
+  "test_parameters": {
+    "duration_seconds": 60,
+    "warmup_seconds": 10,
+    "connections": 100,
+    "threads": 4,
+    "target_rate": 10000,
+    "runs": 3,
+    "target_url": "http://localhost:8080"
+  },
+  "load_generator": {
+    "tool": "oha",
+    "version": "1.12.1"
+  },
+  "runs": [
+    {"run": 1, "output": "runs/run_1.txt", "data": "runs/run_1.json"},
+    {"run": 2, "output": "runs/run_2.txt", "data": "runs/run_2.json"},
+    {"run": 3, "output": "runs/run_3.txt", "data": "runs/run_3.json"}
+  ]
+}
