@@ -1,0 +1,148 @@
+#!/usr/bin/env bash
+#MISE description="Benchmark Sentinel native binary (no Docker)"
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+SENTINEL_BIN="${SENTINEL_BIN:-$HOME/Development/github.com/raskell-io/sentinel/target/release/sentinel}"
+RESULTS_DIR="$ROOT_DIR/results"
+
+# Benchmark parameters
+DURATION="${BENCH_DURATION:-60}"
+CONNECTIONS="${BENCH_CONNECTIONS:-100}"
+RATE="${BENCH_RATE:-10000}"
+WARMUP="${BENCH_WARMUP:-10}"
+RUNS="${BENCH_RUNS:-3}"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
+log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+
+cleanup() {
+    log_info "Cleaning up..."
+    [ -n "${SENTINEL_PID:-}" ] && kill "$SENTINEL_PID" 2>/dev/null || true
+    [ -n "${BACKEND_PID:-}" ] && kill "$BACKEND_PID" 2>/dev/null || true
+    wait 2>/dev/null || true
+}
+trap cleanup EXIT
+
+# Check prerequisites
+if [ ! -x "$SENTINEL_BIN" ]; then
+    log_error "Sentinel binary not found at $SENTINEL_BIN"
+    log_error "Build it with: cd ~/Development/github.com/raskell-io/sentinel && cargo build --release"
+    exit 1
+fi
+
+if ! command -v oha &>/dev/null; then
+    log_error "oha not found. Install with: brew install oha"
+    exit 1
+fi
+
+# Start backend (miniserve - fast Rust HTTP server)
+log_info "Starting backend server on :8081..."
+mkdir -p /tmp/sentinel-bench-backend
+echo '{"status":"ok"}' > /tmp/sentinel-bench-backend/index.html
+miniserve --port 8081 --interfaces 127.0.0.1 /tmp/sentinel-bench-backend &>/dev/null &
+BACKEND_PID=$!
+sleep 1
+
+# Verify backend
+if ! curl -sf http://127.0.0.1:8081/ >/dev/null; then
+    log_error "Backend failed to start"
+    exit 1
+fi
+log_success "Backend ready"
+
+# Start Sentinel
+log_info "Starting Sentinel..."
+"$SENTINEL_BIN" -c "$ROOT_DIR/configs/sentinel/native.kdl" &
+SENTINEL_PID=$!
+sleep 2
+
+# Verify Sentinel
+if ! curl -sf http://127.0.0.1:8080/ >/dev/null; then
+    log_error "Sentinel failed to start"
+    exit 1
+fi
+log_success "Sentinel ready"
+
+# Get version
+SENTINEL_VERSION=$("$SENTINEL_BIN" -c "$ROOT_DIR/configs/sentinel/native.kdl" -t 2>&1 | grep -o 'sentinel.*' | head -1 || echo "unknown")
+
+# Create results directory
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+RESULT_DIR="$RESULTS_DIR/${TIMESTAMP}_sentinel_native"
+mkdir -p "$RESULT_DIR/runs"
+
+log_info "Results will be saved to: $RESULT_DIR"
+
+# Warmup
+log_info "Running warmup for ${WARMUP}s..."
+oha -z "${WARMUP}s" -c 50 -q 1000 --no-tui http://127.0.0.1:8080/ >/dev/null 2>&1 || true
+log_success "Warmup complete"
+
+# Run benchmarks
+for i in $(seq 1 "$RUNS"); do
+    log_info "Run $i of $RUNS: ${CONNECTIONS} connections, ${RATE} RPS, ${DURATION}s"
+
+    oha \
+        -z "${DURATION}s" \
+        -c "$CONNECTIONS" \
+        -q "$RATE" \
+        --no-tui \
+        --latency-correction \
+        --output-format json \
+        http://127.0.0.1:8080/ > "$RESULT_DIR/runs/run_${i}.json" 2>&1
+
+    # Show summary
+    if command -v jq &>/dev/null; then
+        RPS=$(jq -r '.summary.requestsPerSec // 0' "$RESULT_DIR/runs/run_${i}.json")
+        P50=$(jq -r '.latencyPercentiles.p50 // 0' "$RESULT_DIR/runs/run_${i}.json")
+        P99=$(jq -r '.latencyPercentiles.p99 // 0' "$RESULT_DIR/runs/run_${i}.json")
+        SUCCESS=$(jq -r '.summary.successRate // 0' "$RESULT_DIR/runs/run_${i}.json")
+        printf "  RPS: %.0f | p50: %.3fms | p99: %.3fms | Success: %.1f%%\n" \
+            "$RPS" "$(echo "$P50 * 1000" | bc)" "$(echo "$P99 * 1000" | bc)" "$(echo "$SUCCESS * 100" | bc)"
+    fi
+
+    [ "$i" -lt "$RUNS" ] && sleep 5
+done
+
+# Generate summary
+cat > "$RESULT_DIR/summary.md" << EOF
+# Native Benchmark Results
+
+## Overview
+
+| Property | Value |
+|----------|-------|
+| **Binary** | $SENTINEL_BIN |
+| **Date** | $(date -Iseconds) |
+| **Machine** | $(sysctl -n hw.model 2>/dev/null || echo "Unknown") |
+| **CPU** | $(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo "Unknown") |
+| **Cores** | $(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo "0") |
+
+## Test Parameters
+
+| Parameter | Value |
+|-----------|-------|
+| **Duration** | ${DURATION}s |
+| **Warmup** | ${WARMUP}s |
+| **Connections** | $CONNECTIONS |
+| **Target Rate** | $RATE RPS |
+| **Runs** | $RUNS |
+
+## Results
+
+$(for i in $(seq 1 "$RUNS"); do echo "- Run $i: [run_${i}.json](runs/run_${i}.json)"; done)
+EOF
+
+log_success "Benchmark complete!"
+log_success "Results: $RESULT_DIR"

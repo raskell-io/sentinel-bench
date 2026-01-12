@@ -2,7 +2,7 @@
 // Minimal configuration for benchmarking core proxy performance
 // All optional features disabled for fair comparison
 
-server {
+system {
     worker-threads 0  // 0 = auto-detect CPU cores
     max-connections 65535
     graceful-shutdown-timeout-secs 30
@@ -13,7 +13,6 @@ listeners {
         address "0.0.0.0:8080"
         protocol "http"
         request-timeout-secs 60
-        keepalive-timeout-secs 75
     }
 }
 
@@ -33,19 +32,8 @@ routes {
 
 upstreams {
     upstream "backend" {
-        targets {
-            target {
-                address "backend:8080"
-                weight 1
-            }
-        }
+        target "backend:8080" weight=1
         load-balancing "round_robin"
-        // Health checks disabled for benchmarking
-        connection-pool {
-            max-connections 1000
-            max-idle 100
-            idle-timeout-secs 60
-        }
     }
 }
 
@@ -53,21 +41,16 @@ limits {
     max-header-size-bytes 8192
     max-header-count 100
     max-body-size-bytes 10485760
-    max-connections-per-client 10000
-    max-total-connections 65535
 }
 
 observability {
     metrics {
-        enabled true
+        enabled #true
         address "0.0.0.0:9090"
         path "/metrics"
     }
     logging {
-        level "warn"  // Minimal logging for benchmarks
+        level "warn"
         format "json"
-        access-log {
-            enabled false  // CRITICAL: Disable access logging
-        }
     }
 }

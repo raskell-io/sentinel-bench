@@ -43,8 +43,7 @@ services:
   # Sentinel Proxy
   # =============================================================================
   sentinel:
-    image: ${SENTINEL_IMAGE:-ghcr.io/raskell-io/sentinel:latest}
-    platform: ${SENTINEL_PLATFORM:-linux/amd64}  # Use linux/arm64 for local M-series builds
+    image: ${SENTINEL_IMAGE:-sentinel:optimized}
     container_name: bench-sentinel
     profiles:
       - sentinel
@@ -52,7 +51,7 @@ services:
       - "8080:8080"
       - "9090:9090"
     volumes:
-      - ../configs/sentinel:/etc/sentinel:ro
+      - ../configs/sentinel/config.kdl:/etc/sentinel/config.kdl:ro
     networks:
       - bench-net
     depends_on:
@@ -62,6 +61,13 @@ services:
         limits:
           cpus: '4'
           memory: 2G
+    # Health check using built-in endpoint (no curl in distroless)
+    healthcheck:
+      test: ["CMD", "/sentinel", "test", "-c", "/etc/sentinel/config.kdl"]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
 
   # =============================================================================
   # Envoy Proxy

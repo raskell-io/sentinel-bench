@@ -65,18 +65,37 @@ for tool in oha wrk2 wrk hey k6 ab; do
 done
 """
 
+[tasks.build-sentinel]
+description = "Build optimized Sentinel image from local source"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+SENTINEL_DIR="${SENTINEL_DIR:-../sentinel}"
+if [[ ! -d "$SENTINEL_DIR" ]]; then
+    echo "ERROR: Sentinel source not found at $SENTINEL_DIR"
+    echo "Set SENTINEL_DIR to point to the sentinel repository"
+    exit 1
+fi
+echo "Building optimized Sentinel image from $SENTINEL_DIR..."
+docker build --target proxy -t sentinel:optimized "$SENTINEL_DIR"
+echo ""
+echo "Done. Image: sentinel:optimized"
+docker images sentinel:optimized --format "Size: {{.Size}}"
+"""
+
 [tasks.pull]
 description = "Pull all proxy images from registries"
 run = """
 #!/usr/bin/env bash
 set -euo pipefail
 echo "Pulling proxy images..."
-docker pull ghcr.io/raskell-io/sentinel:latest
 docker pull envoyproxy/envoy:v1.31-latest
 docker pull haproxy:2.9-alpine
 docker pull nginx:1.25-alpine
 docker pull mccutchen/go-httpbin:latest
 echo "Done. All images pulled."
+echo ""
+echo "Note: Sentinel uses local build. Run 'mise run build-sentinel' to build."
 """
 
 [tasks.down]

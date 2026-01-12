@@ -1,6 +1,5 @@
-// Sentinel Benchmark Configuration - Passthrough
-// Minimal configuration for benchmarking core proxy performance
-// All optional features disabled for fair comparison
+// Sentinel Benchmark Configuration - Native Binary
+// For running benchmarks without Docker
 
 system {
     worker-threads 0  // 0 = auto-detect CPU cores
@@ -10,7 +9,7 @@ system {
 
 listeners {
     listener "http" {
-        address "0.0.0.0:8080"
+        address "127.0.0.1:8080"
         protocol "http"
         request-timeout-secs 60
     }
@@ -32,7 +31,7 @@ routes {
 
 upstreams {
     upstream "backend" {
-        target "backend:8080" weight=1
+        target "127.0.0.1:8081" weight=1
         load-balancing "round_robin"
     }
 }
@@ -46,7 +45,7 @@ limits {
 observability {
     metrics {
         enabled #true
-        address "0.0.0.0:9090"
+        address "127.0.0.1:9090"
         path "/metrics"
     }
     logging {
