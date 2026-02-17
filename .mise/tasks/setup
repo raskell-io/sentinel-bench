@@ -5,11 +5,11 @@
 set -euo pipefail
 
 # =============================================================================
-# Setup script for Sentinel Benchmarking Framework
+# Setup script for Zentinel Benchmarking Framework
 # Installs dependencies and validates the environment
 # =============================================================================
 
-echo "Sentinel Benchmarking Framework Setup"
+echo "Zentinel Benchmarking Framework Setup"
 echo "======================================"
 echo ""
 

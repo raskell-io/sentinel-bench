@@ -1,0 +1,33 @@
+# Zentinel Proxy Image for Benchmarking
+# Build from source with release optimizations
+
+FROM rust:1.75-bookworm AS builder
+
+WORKDIR /build
+
+# Copy the zentinel source (assumes zentinel repo is at ../zentinel relative to zentinel-bench)
+# For local development, we'll mount the binary instead
+# This Dockerfile is a placeholder for when Zentinel publishes releases
+
+# For now, create a simple placeholder that expects a mounted binary
+RUN echo "Placeholder for Zentinel build"
+
+# Final image
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create config directory
+RUN mkdir -p /etc/zentinel
+
+# The actual zentinel binary should be mounted at runtime
+# or copied from a local build:
+# COPY --from=builder /build/target/release/zentinel /usr/local/bin/zentinel
+
+EXPOSE 8080 9090
+
+# Placeholder entrypoint - override with actual zentinel binary
+ENTRYPOINT ["echo", "Mount zentinel binary at /usr/local/bin/zentinel"]

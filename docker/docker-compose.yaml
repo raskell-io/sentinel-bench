@@ -1,13 +1,13 @@
-# Sentinel Benchmarking Framework - Local Docker Infrastructure
+# Zentinel Benchmarking Framework - Local Docker Infrastructure
 # Usage: docker compose -f docker/docker-compose.yaml --profile <proxy> up
 #
 # Profiles:
-#   - sentinel: Run Sentinel proxy
+#   - zentinel: Run Zentinel proxy
 #   - envoy: Run Envoy proxy
 #   - haproxy: Run HAProxy proxy
 #   - nginx: Run Nginx proxy
 #
-# Example: docker compose -f docker/docker-compose.yaml --profile sentinel up
+# Example: docker compose -f docker/docker-compose.yaml --profile zentinel up
 
 services:
   # =============================================================================
@@ -40,18 +40,18 @@ services:
           memory: 512M
 
   # =============================================================================
-  # Sentinel Proxy
+  # Zentinel Proxy
   # =============================================================================
-  sentinel:
-    image: ${SENTINEL_IMAGE:-sentinel:optimized}
-    container_name: bench-sentinel
+  zentinel:
+    image: ${ZENTINEL_IMAGE:-zentinel:optimized}
+    container_name: bench-zentinel
     profiles:
-      - sentinel
+      - zentinel
     ports:
       - "8080:8080"
       - "9090:9090"
     volumes:
-      - ../configs/sentinel/config.kdl:/etc/sentinel/config.kdl:ro
+      - ../configs/zentinel/config.kdl:/etc/zentinel/config.kdl:ro
     networks:
       - bench-net
     depends_on:
@@ -63,7 +63,7 @@ services:
           memory: 2G
     # Health check using built-in endpoint (no curl in distroless)
     healthcheck:
-      test: ["CMD", "/sentinel", "test", "-c", "/etc/sentinel/config.kdl"]
+      test: ["CMD", "/zentinel", "test", "-c", "/etc/zentinel/config.kdl"]
       interval: 10s
       timeout: 3s
       start_period: 5s

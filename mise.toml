@@ -1,10 +1,10 @@
-# Sentinel Benchmarking Framework
+# Zentinel Benchmarking Framework
 # mise configuration for task running and dependency management
 
 [env]
-# Sentinel image - override by editing this or exporting SENTINEL_IMAGE before running
-# SENTINEL_IMAGE = "sentinel:25.12_17"  # uncomment for local builds
-# SENTINEL_PLATFORM = "linux/arm64"     # uncomment for local arm64 builds on M-series Macs
+# Zentinel image - override by editing this or exporting ZENTINEL_IMAGE before running
+# ZENTINEL_IMAGE = "zentinel:25.12_17"  # uncomment for local builds
+# ZENTINEL_PLATFORM = "linux/arm64"     # uncomment for local arm64 builds on M-series Macs
 
 # Default benchmark settings (can be overridden)
 BENCH_DURATION = "60"
@@ -65,22 +65,22 @@ for tool in oha wrk2 wrk hey k6 ab; do
 done
 """
 
-[tasks.build-sentinel]
-description = "Build optimized Sentinel image from local source"
+[tasks.build-zentinel]
+description = "Build optimized Zentinel image from local source"
 run = """
 #!/usr/bin/env bash
 set -euo pipefail
-SENTINEL_DIR="${SENTINEL_DIR:-../sentinel}"
-if [[ ! -d "$SENTINEL_DIR" ]]; then
-    echo "ERROR: Sentinel source not found at $SENTINEL_DIR"
-    echo "Set SENTINEL_DIR to point to the sentinel repository"
+ZENTINEL_DIR="${ZENTINEL_DIR:-../zentinel}"
+if [[ ! -d "$ZENTINEL_DIR" ]]; then
+    echo "ERROR: Zentinel source not found at $ZENTINEL_DIR"
+    echo "Set ZENTINEL_DIR to point to the zentinel repository"
     exit 1
 fi
-echo "Building optimized Sentinel image from $SENTINEL_DIR..."
-docker build --target proxy -t sentinel:optimized "$SENTINEL_DIR"
+echo "Building optimized Zentinel image from $ZENTINEL_DIR..."
+docker build --target proxy -t zentinel:optimized "$ZENTINEL_DIR"
 echo ""
-echo "Done. Image: sentinel:optimized"
-docker images sentinel:optimized --format "Size: {{.Size}}"
+echo "Done. Image: zentinel:optimized"
+docker images zentinel:optimized --format "Size: {{.Size}}"
 """
 
 [tasks.pull]
@@ -95,7 +95,7 @@ docker pull nginx:1.25-alpine
 docker pull mccutchen/go-httpbin:latest
 echo "Done. All images pulled."
 echo ""
-echo "Note: Sentinel uses local build. Run 'mise run build-sentinel' to build."
+echo "Note: Zentinel uses local build. Run 'mise run build-zentinel' to build."
 """
 
 [tasks.down]

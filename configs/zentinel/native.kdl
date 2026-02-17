@@ -1,0 +1,55 @@
+// Zentinel Benchmark Configuration - Native Binary
+// For running benchmarks without Docker
+
+system {
+    worker-threads 0  // 0 = auto-detect CPU cores
+    max-connections 65535
+    graceful-shutdown-timeout-secs 30
+}
+
+listeners {
+    listener "http" {
+        address "127.0.0.1:8080"
+        protocol "http"
+        request-timeout-secs 60
+    }
+}
+
+routes {
+    route "benchmark" {
+        priority "high"
+        matches {
+            path-prefix "/"
+        }
+        upstream "backend"
+        policies {
+            timeout-secs 30
+            failure-mode "open"
+        }
+    }
+}
+
+upstreams {
+    upstream "backend" {
+        target "127.0.0.1:8081" weight=1
+        load-balancing "round_robin"
+    }
+}
+
+limits {
+    max-header-size-bytes 8192
+    max-header-count 100
+    max-body-size-bytes 10485760
+}
+
+observability {
+    metrics {
+        enabled #true
+        address "127.0.0.1:9090"
+        path "/metrics"
+    }
+    logging {
+        level "warn"
+        format "json"
+    }
+}

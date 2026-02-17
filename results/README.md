@@ -36,7 +36,7 @@ Each `metadata.json` contains:
     "timezone": "UTC"
   },
   "benchmark": {
-    "proxy": "envoy|haproxy|nginx|sentinel",
+    "proxy": "envoy|haproxy|nginx|zentinel",
     "scenario": "passthrough|routing|tls|...",
     "name": "optional custom name",
     "config_file": "configs/envoy/passthrough.yaml"

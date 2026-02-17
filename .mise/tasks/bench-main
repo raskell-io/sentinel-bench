@@ -6,7 +6,7 @@
 set -euo pipefail
 
 # =============================================================================
-# Sentinel Benchmarking Framework - Main Runner
+# Zentinel Benchmarking Framework - Main Runner
 # Usage: mise run bench <proxy> <scenario> [options]
 #
 # Results are stored in: results/<timestamp>_<proxy>_<scenario>/
@@ -42,12 +42,12 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 
 usage() {
     cat <<EOF
-Sentinel Benchmarking Framework
+Zentinel Benchmarking Framework
 
 Usage: mise run bench <proxy> <scenario> [options]
 
 Proxies:
-  sentinel    Sentinel reverse proxy
+  zentinel    Zentinel reverse proxy
   envoy       Envoy proxy
   haproxy     HAProxy
   nginx       Nginx
@@ -148,11 +148,11 @@ get_proxy_version() {
     local version="unknown"
 
     case "$proxy" in
-        sentinel)
+        zentinel)
             # Try to get version from running container or binary
-            version=$(docker exec bench-sentinel sentinel --version 2>/dev/null | head -1 || echo "unknown")
+            version=$(docker exec bench-zentinel zentinel --version 2>/dev/null | head -1 || echo "unknown")
             if [[ "$version" == "unknown" ]]; then
-                version=$(sentinel --version 2>/dev/null | head -1 || echo "unknown")
+                version=$(zentinel --version 2>/dev/null | head -1 || echo "unknown")
             fi
             ;;
         envoy)
@@ -841,7 +841,7 @@ run_benchmark() {
 
 run_all_proxies() {
     local scenario="$1"
-    local proxies=("sentinel" "envoy" "haproxy" "nginx")
+    local proxies=("zentinel" "envoy" "haproxy" "nginx")
 
     log_info "Running comparison benchmark for all proxies"
 
@@ -849,7 +849,7 @@ run_all_proxies() {
         log_info "=== Testing $proxy ==="
 
         log_info "Starting $proxy..."
-        # Use --force-recreate to ensure container uses current image (e.g., SENTINEL_IMAGE)
+        # Use --force-recreate to ensure container uses current image (e.g., ZENTINEL_IMAGE)
         # Use --pull never for local builds (pull manually if you need registry updates)
         docker-compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile "$proxy" up -d --force-recreate --pull never
         sleep 5

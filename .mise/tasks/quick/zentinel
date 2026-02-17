@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+#MISE description="Quick benchmark Zentinel (starts, benchmarks, stops)"
+#MISE depends=["up:zentinel"]
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+# Run quick benchmark
+"$SCRIPT_DIR/../quick-main" "$@"
+
+# Stop after benchmark
+echo ""
+echo "Stopping Zentinel..."
+docker-compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile zentinel down

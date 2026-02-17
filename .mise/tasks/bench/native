@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-#MISE description="Benchmark Sentinel native binary (no Docker)"
+#MISE description="Benchmark Zentinel native binary (no Docker)"
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-SENTINEL_BIN="${SENTINEL_BIN:-$HOME/Development/github.com/raskell-io/sentinel/target/release/sentinel}"
+ZENTINEL_BIN="${ZENTINEL_BIN:-$HOME/Development/github.com/zentinelproxy/zentinel/target/release/zentinel}"
 RESULTS_DIR="$ROOT_DIR/results"
 
 # Benchmark parameters
@@ -28,16 +28,16 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 cleanup() {
     log_info "Cleaning up..."
-    [ -n "${SENTINEL_PID:-}" ] && kill "$SENTINEL_PID" 2>/dev/null || true
+    [ -n "${ZENTINEL_PID:-}" ] && kill "$ZENTINEL_PID" 2>/dev/null || true
     [ -n "${BACKEND_PID:-}" ] && kill "$BACKEND_PID" 2>/dev/null || true
     wait 2>/dev/null || true
 }
 trap cleanup EXIT
 
 # Check prerequisites
-if [ ! -x "$SENTINEL_BIN" ]; then
-    log_error "Sentinel binary not found at $SENTINEL_BIN"
-    log_error "Build it with: cd ~/Development/github.com/raskell-io/sentinel && cargo build --release"
+if [ ! -x "$ZENTINEL_BIN" ]; then
+    log_error "Zentinel binary not found at $ZENTINEL_BIN"
+    log_error "Build it with: cd ~/Development/github.com/zentinelproxy/zentinel && cargo build --release"
     exit 1
 fi
 
@@ -48,9 +48,9 @@ fi
 
 # Start backend (miniserve - fast Rust HTTP server)
 log_info "Starting backend server on :8081..."
-mkdir -p /tmp/sentinel-bench-backend
-echo '{"status":"ok"}' > /tmp/sentinel-bench-backend/index.html
-miniserve --port 8081 --interfaces 127.0.0.1 /tmp/sentinel-bench-backend &>/dev/null &
+mkdir -p /tmp/zentinel-bench-backend
+echo '{"status":"ok"}' > /tmp/zentinel-bench-backend/index.html
+miniserve --port 8081 --interfaces 127.0.0.1 /tmp/zentinel-bench-backend &>/dev/null &
 BACKEND_PID=$!
 sleep 1
 
@@ -61,25 +61,25 @@ if ! curl -sf http://127.0.0.1:8081/ >/dev/null; then
 fi
 log_success "Backend ready"
 
-# Start Sentinel
-log_info "Starting Sentinel..."
-"$SENTINEL_BIN" -c "$ROOT_DIR/configs/sentinel/native.kdl" &
-SENTINEL_PID=$!
+# Start Zentinel
+log_info "Starting Zentinel..."
+"$ZENTINEL_BIN" -c "$ROOT_DIR/configs/zentinel/native.kdl" &
+ZENTINEL_PID=$!
 sleep 2
 
-# Verify Sentinel
+# Verify Zentinel
 if ! curl -sf http://127.0.0.1:8080/ >/dev/null; then
-    log_error "Sentinel failed to start"
+    log_error "Zentinel failed to start"
     exit 1
 fi
-log_success "Sentinel ready"
+log_success "Zentinel ready"
 
 # Get version
-SENTINEL_VERSION=$("$SENTINEL_BIN" -c "$ROOT_DIR/configs/sentinel/native.kdl" -t 2>&1 | grep -o 'sentinel.*' | head -1 || echo "unknown")
+ZENTINEL_VERSION=$("$ZENTINEL_BIN" -c "$ROOT_DIR/configs/zentinel/native.kdl" -t 2>&1 | grep -o 'zentinel.*' | head -1 || echo "unknown")
 
 # Create results directory
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-RESULT_DIR="$RESULTS_DIR/${TIMESTAMP}_sentinel_native"
+RESULT_DIR="$RESULTS_DIR/${TIMESTAMP}_zentinel_native"
 mkdir -p "$RESULT_DIR/runs"
 
 log_info "Results will be saved to: $RESULT_DIR"
@@ -123,7 +123,7 @@ cat > "$RESULT_DIR/summary.md" << EOF
 
 | Property | Value |
 |----------|-------|
-| **Binary** | $SENTINEL_BIN |
+| **Binary** | $ZENTINEL_BIN |
 | **Date** | $(date -Iseconds) |
 | **Machine** | $(sysctl -n hw.model 2>/dev/null || echo "Unknown") |
 | **CPU** | $(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo "Unknown") |

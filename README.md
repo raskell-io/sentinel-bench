@@ -1,14 +1,14 @@
 <div align="center">
 
 <h1 align="center">
-  <img src=".github/static/bench-icon.png" alt="sentinel-bench icon" width="96" />
+  <img src=".github/static/bench-icon.png" alt="zentinel-bench icon" width="96" />
   <br>
-  sentinel-bench
+  zentinel-bench
 </h1>
 
 <p align="center">
   <em>Fair, reproducible benchmarking for reverse proxies.</em><br>
-  <em>Sentinel vs Envoy vs HAProxy vs Nginx.</em>
+  <em>Zentinel vs Envoy vs HAProxy vs Nginx.</em>
 </p>
 
 <p align="center">
@@ -27,14 +27,14 @@
   <a href="docs/CONCEPT.md">Methodology</a> •
   <a href="#quick-start">Quick Start</a> •
   <a href="#scenarios">Scenarios</a> •
-  <a href="https://github.com/raskell-io/sentinel">Sentinel</a>
+  <a href="https://github.com/zentinelproxy/zentinel">Zentinel</a>
 </p>
 
 <hr />
 
 </div>
 
-Benchmarking framework for comparing [Sentinel](https://github.com/raskell-io/sentinel) against Envoy, HAProxy, and Nginx with equivalent configurations and rigorous methodology.
+Benchmarking framework for comparing [Zentinel](https://github.com/zentinelproxy/zentinel) against Envoy, HAProxy, and Nginx with equivalent configurations and rigorous methodology.
 
 ---
 
@@ -103,13 +103,13 @@ Run `mise tasks` to see all available tasks:
 ## Repository Structure
 
 ```
-sentinel-bench/
+zentinel-bench/
 ├── mise.toml           # Tool dependencies and short tasks
 ├── .mise/tasks/        # File-based tasks (bench, quick, setup)
 ├── docs/               # Methodology and design docs
 │   └── CONCEPT.md      # Framework design document
 ├── configs/            # Equivalent proxy configurations
-│   ├── sentinel/       # Sentinel KDL configs
+│   ├── zentinel/       # Zentinel KDL configs
 │   ├── envoy/          # Envoy YAML configs
 │   ├── haproxy/        # HAProxy configs
 │   └── nginx/          # Nginx configs
@@ -132,7 +132,7 @@ sentinel-bench/
 | `tls` | HTTPS termination |
 | `connection_scaling` | 1K, 10K, 50K concurrent connections |
 
-### Tier 2: Sentinel-Specific
+### Tier 2: Zentinel-Specific
 
 | Scenario | Description |
 |----------|-------------|

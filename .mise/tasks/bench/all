@@ -9,7 +9,7 @@ SCENARIO="${1:-passthrough}"
 echo "=== Benchmarking all proxies ==="
 echo ""
 
-for proxy in sentinel envoy haproxy nginx; do
+for proxy in zentinel envoy haproxy nginx; do
     echo ">>> Running bench:$proxy $SCENARIO"
     mise run "bench:$proxy" "$SCENARIO" "${@:2}"
     echo ""

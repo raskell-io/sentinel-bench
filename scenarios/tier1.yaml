@@ -9,7 +9,7 @@ scenarios:
     description: "Simple HTTP passthrough, no processing"
     category: tier1
     configs:
-      sentinel: configs/sentinel/passthrough.kdl
+      zentinel: configs/zentinel/passthrough.kdl
       envoy: configs/envoy/passthrough.yaml
       haproxy: configs/haproxy/passthrough.cfg
       nginx: configs/nginx/passthrough.conf
@@ -62,7 +62,7 @@ scenarios:
     description: "100 routes with path-prefix matching"
     category: tier1
     configs:
-      sentinel: configs/sentinel/routing.kdl
+      zentinel: configs/zentinel/routing.kdl
       envoy: configs/envoy/routing.yaml
       haproxy: configs/haproxy/routing.cfg
       nginx: configs/nginx/routing.conf
@@ -118,7 +118,7 @@ scenarios:
         rate: 20000
 
       p2c:
-        description: "Power-of-Two Choices (Sentinel-specific)"
+        description: "Power-of-Two Choices (Zentinel-specific)"
         backends: 4
         algorithm: p2c
         duration: 60

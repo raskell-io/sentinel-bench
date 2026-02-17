@@ -1,8 +1,8 @@
-# Sentinel Benchmarking Framework
+# Zentinel Benchmarking Framework
 
 ## Overview
 
-This framework provides a fair, reproducible methodology for benchmarking Sentinel against other popular reverse proxies: Envoy, HAProxy, and Nginx.
+This framework provides a fair, reproducible methodology for benchmarking Zentinel against other popular reverse proxies: Envoy, HAProxy, and Nginx.
 
 ## Design Principles
 
@@ -15,10 +15,10 @@ This framework provides a fair, reproducible methodology for benchmarking Sentin
 ## Repository Structure
 
 ```
-sentinel-bench/
+zentinel-bench/
 ├── docs/                   # Documentation and methodology
 ├── configs/                # Equivalent proxy configurations
-│   ├── sentinel/           # Sentinel KDL configs
+│   ├── zentinel/           # Zentinel KDL configs
 │   ├── envoy/              # Envoy YAML configs
 │   ├── haproxy/            # HAProxy configs
 │   └── nginx/              # Nginx configs
@@ -66,9 +66,9 @@ These scenarios establish baseline performance characteristics that any proxy sh
 | **TLS Termination** | HTTPS frontend, HTTP backend | Handshake cost, session reuse |
 | **Connection Scaling** | 1K, 10K, 100K concurrent | Memory, CPU, latency degradation |
 
-### Tier 2: Sentinel-Specific Features
+### Tier 2: Zentinel-Specific Features
 
-These scenarios highlight Sentinel's unique capabilities.
+These scenarios highlight Zentinel's unique capabilities.
 
 | Scenario | Description | Metrics |
 |----------|-------------|---------|
@@ -140,7 +140,7 @@ errors:
 
 For fair comparison, all proxies must be configured equivalently:
 
-| Feature | Sentinel | Envoy | HAProxy | Nginx |
+| Feature | Zentinel | Envoy | HAProxy | Nginx |
 |---------|----------|-------|---------|-------|
 | Workers | `workers = N` | `--concurrency N` | `nbproc N` | `worker_processes N` |
 | Max Connections | `max_connections` | `overload_manager` | `maxconn` | `worker_connections` |

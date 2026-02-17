@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+#MISE description="Start Zentinel proxy"
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+echo "Starting Zentinel..."
+# Use --force-recreate to ensure container uses the current ZENTINEL_IMAGE
+# Use --pull never for local builds (pull manually if you need registry updates)
+docker-compose -f "$ROOT_DIR/docker/docker-compose.yaml" --profile zentinel up -d --force-recreate --pull never
+
+echo "Waiting for Zentinel to be ready..."
+for i in {1..30}; do
+    if curl -sf http://localhost:8080/ >/dev/null 2>&1; then
+        echo "Zentinel is ready!"
+        exit 0
+    fi
+    sleep 1
+done
+
+echo "Warning: Zentinel may not be fully ready"

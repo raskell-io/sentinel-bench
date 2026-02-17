@@ -252,7 +252,7 @@ main() {
         echo ""
         echo "Run some benchmarks first:"
         echo "  mise run bench:envoy"
-        echo "  mise run bench:sentinel"
+        echo "  mise run bench:zentinel"
         echo "  mise run bench:all"
         exit 0
     fi
